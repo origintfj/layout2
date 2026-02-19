@@ -1,9 +1,12 @@
 # Example startup Tcl script for layout2.
-# You can customize this and copy it to init.tcl for your local setup.
+#
+# Copy this file to init.tcl (or source it manually) to customize startup
+# behavior while keeping the default script simple.
 
-# Load default palette from a layers file
+# Load default layer palette from layers file.
 layer load example_layers.txt
 
-# Example of additional startup customization:
+# Example customization:
 # layer configure Metal3 -visible 0
 # layer configure Metal2 -selectable 0
+# tool set rect

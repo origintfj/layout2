@@ -18,6 +18,7 @@ QString LayerManager::activeLayer() const {
 }
 
 int LayerManager::findLayerIndex(const QString& layerName) const {
+    // Case-insensitive lookup keeps Tcl UX forgiving.
     for (int i = 0; i < m_layers.size(); ++i) {
         if (m_layers[i].name.compare(layerName, Qt::CaseInsensitive) == 0) {
             return i;
@@ -35,6 +36,7 @@ bool LayerManager::configureLayer(const QString& layerName, const QString& optio
 
     LayerDefinition layer = m_layers[index];
 
+    // Only two toggles are currently supported.
     if (option == "-visible") {
         layer.visible = value;
     } else if (option == "-selectable") {
@@ -59,14 +61,18 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
     QVector<LayerDefinition> loaded;
     QTextStream stream(&file);
     int lineNo = 0;
+
     while (!stream.atEnd()) {
         const QString line = stream.readLine().trimmed();
         ++lineNo;
 
+        // Skip comments/blank lines for readability.
         if (line.isEmpty() || line.startsWith('#')) {
             continue;
         }
 
+        // Expected format:
+        // <name> <type> <#RRGGBB> <0xPATTERN>
         const QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
         if (parts.size() != 4) {
             error = QString("Invalid line %1 in %2 (expected: name type #RRGGBB 0xPATTERN)")
@@ -81,6 +87,7 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
             return false;
         }
 
+        // Pattern token is stored as string but validated numerically.
         bool patternOk = false;
         parts[3].toULongLong(&patternOk, 0);
         if (!patternOk) {
@@ -90,6 +97,7 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
             return false;
         }
 
+        // New layers are visible/selectable by default.
         loaded.push_back({parts[0], parts[1], color, parts[3], true, true});
     }
 
@@ -98,8 +106,10 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
         return false;
     }
 
+    // Replace model atomically and choose first layer as active.
     m_layers = loaded;
     m_activeLayer = m_layers[0].name;
+
     emit layersReset(m_layers);
     emit activeLayerChanged(m_activeLayer);
     return true;
@@ -128,12 +138,15 @@ bool LayerManager::layerByName(const QString& layerName, LayerDefinition& layer,
         error = QString("Unknown layer '%1'").arg(layerName);
         return false;
     }
+
     layer = m_layers[index];
     return true;
 }
 
 QString LayerManager::serializeLayers() const {
     QString out;
+
+    // Encode one human-readable row per layer.
     for (const LayerDefinition& layer : m_layers) {
         const QString activeMark = layer.name == m_activeLayer ? "active" : "inactive";
         out += QString("%1 {%2} %3 %4 %5 %6 %7\n")
@@ -142,5 +155,6 @@ QString LayerManager::serializeLayers() const {
                    .arg(layer.selectable ? "selectable" : "locked")
                    .arg(activeMark);
     }
+
     return out.trimmed();
 }

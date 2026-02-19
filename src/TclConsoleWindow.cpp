@@ -16,22 +16,23 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     setWindowTitle("Tcl Interpreter");
     resize(900, 450);
 
+    // Build interpreter console UI.
     auto* central = new QWidget(this);
     auto* layout = new QVBoxLayout(central);
-
     m_output->setReadOnly(true);
     m_output->setPlaceholderText("Tcl console output...");
     m_input->setPlaceholderText("Enter Tcl command and press Enter");
-
     layout->addWidget(m_output);
     layout->addWidget(m_input);
     setCentralWidget(central);
 
+    // Register command families exposed to Tcl.
     Tcl_CreateObjCommand(m_interp, "layer", &TclConsoleWindow::LayerCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "tool", &TclConsoleWindow::ToolCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "canvas", &TclConsoleWindow::CanvasCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "view", &TclConsoleWindow::ViewCommandBridge, this, nullptr);
 
+    // Manual command entry from console input line.
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
         const QString command = m_input->text().trimmed();
         if (!command.isEmpty()) {
@@ -40,9 +41,11 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
         m_input->clear();
     });
 
+    // GUI interactions from child editor route through the same execute path.
     connect(m_editorWindow, &LayoutEditorWindow::commandRequested,
             this, &TclConsoleWindow::executeCommand);
 
+    // Model->view synchronization wiring.
     connect(&m_layerManager, &LayerManager::layersReset,
             m_editorWindow, &LayoutEditorWindow::setLayers);
     connect(&m_layerManager, &LayerManager::layerChanged,
@@ -52,6 +55,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
 
     m_editorWindow->show();
 
+    // Startup script bootstraps initial palette/tool config.
     appendTranscript("Interpreter ready. Loading init.tcl...");
     executeCommand("source init.tcl");
 }
@@ -105,6 +109,7 @@ bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& valu
         Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("invalid %1").arg(fieldName).toUtf8().constData(), -1));
         return false;
     }
+
     value = static_cast<qint64>(raw);
     return true;
 }
@@ -114,6 +119,7 @@ bool TclConsoleWindow::parseDouble(Tcl_Interp* interp, Tcl_Obj* obj, double& val
         Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("invalid %1").arg(fieldName).toUtf8().constData(), -1));
         return false;
     }
+
     return true;
 }
 
@@ -126,8 +132,7 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
     const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
 
     if (subCommand == "list") {
-        const QString listing = m_layerManager.serializeLayers();
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(listing.toUtf8().constData(), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(m_layerManager.serializeLayers().toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -148,10 +153,8 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
             return TCL_ERROR;
         }
 
-        const QString message = QString("loaded %1 layers from %2")
-                                    .arg(m_layerManager.layers().size())
-                                    .arg(path);
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(message.toUtf8().constData(), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(
+            QString("loaded %1 layers from %2").arg(m_layerManager.layers().size()).arg(path).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -172,7 +175,8 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
             return TCL_ERROR;
         }
 
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("active layer: %1").arg(m_layerManager.activeLayer()).toUtf8().constData(), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(
+            QString("active layer: %1").arg(m_layerManager.activeLayer()).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -196,14 +200,13 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
         }
 
         QString error;
-        const bool changed = m_layerManager.configureLayer(layerName, option, numeric == 1, error);
-        if (!changed) {
+        if (!m_layerManager.configureLayer(layerName, option, numeric == 1, error)) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
             return TCL_ERROR;
         }
 
-        const QString message = QString("layer %1 updated: %2=%3").arg(layerName, option).arg(numeric);
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(message.toUtf8().constData(), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(
+            QString("layer %1 updated: %2=%3").arg(layerName, option).arg(numeric).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -244,14 +247,17 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
+        // Rectangle tool starts preview only for left button and valid active layer.
         if (button == 1 && m_activeTool == "rect" && !m_layerManager.activeLayer().isEmpty()) {
             m_rectInProgress = true;
+
             LayerDefinition active;
             QString error;
             if (!m_layerManager.layerByName(m_layerManager.activeLayer(), active, error)) {
                 Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
                 return TCL_ERROR;
             }
+
             m_previewRectangle = {active.name, active.color, x, y, x, y};
             m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
         }
@@ -342,6 +348,7 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
             return TCL_ERROR;
         }
 
+        // Incremental zoom with bounds to avoid singular/huge transforms.
         const double factor = wheelDelta > 0 ? 1.15 : 1.0 / 1.15;
         const double oldZoom = m_zoom;
         m_zoom *= factor;
@@ -352,6 +359,7 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
             m_zoom = 200.0;
         }
 
+        // Anchor-preserving zoom: keep anchor point fixed on screen.
         const double worldX = (anchorX - m_panX) / oldZoom;
         const double worldY = (anchorY - m_panY) / oldZoom;
         m_panX = anchorX - (worldX * m_zoom);

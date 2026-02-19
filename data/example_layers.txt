@@ -1,4 +1,7 @@
-# name type color pattern
+# Example layers file format:
+# <name> <type> <#RRGGBB> <0xPATTERN>
+#
+# These are sample process layers used to bootstrap the editor palette.
 Metal1 drawing #1f77b4 0x00FF
 Metal2 drawing #ff7f0e 0x0F0F
 Metal3 drawing #2ca02c 0xAAAA
