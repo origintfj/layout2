@@ -21,6 +21,7 @@ public:
 
     const QVector<LayerDefinition>& layers() const;
     bool configureLayer(const QString& layerName, const QString& option, bool value, QString& error);
+    bool loadLayersFromFile(const QString& filePath, QString& error);
     QString serializeLayers() const;
 
 signals:

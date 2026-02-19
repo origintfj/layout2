@@ -1,5 +1,7 @@
 #include "TclConsoleWindow.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QVBoxLayout>
@@ -38,13 +40,15 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     connect(m_editorWindow, &LayoutEditorWindow::commandRequested,
             this, &TclConsoleWindow::executeCommand);
 
+    connect(&m_layerManager, &LayerManager::layersReset,
+            m_editorWindow, &LayoutEditorWindow::setLayers);
     connect(&m_layerManager, &LayerManager::layerChanged,
             m_editorWindow, &LayoutEditorWindow::onLayerChanged);
 
-    m_editorWindow->setLayers(m_layerManager.layers());
     m_editorWindow->show();
 
-    appendTranscript("Interpreter ready. Try: layer list");
+    appendTranscript("Interpreter ready. Loading init.tcl...");
+    executeCommand("source init.tcl");
 }
 
 TclConsoleWindow::~TclConsoleWindow() {
@@ -81,7 +85,7 @@ int TclConsoleWindow::LayerCommandBridge(ClientData clientData, Tcl_Interp* inte
 
 int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
     if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: layer <list|configure> ..."), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: layer <list|load|configure> ..."), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -90,6 +94,30 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
     if (subCommand == "list") {
         const QString listing = m_layerManager.serializeLayers();
         Tcl_SetObjResult(interp, Tcl_NewStringObj(listing.toUtf8().constData(), -1));
+        return TCL_OK;
+    }
+
+    if (subCommand == "load") {
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: layer load <filePath>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString rawPath = QString::fromUtf8(Tcl_GetString(objv[2]));
+        const QString path = QDir::isAbsolutePath(rawPath)
+                                 ? rawPath
+                                 : QDir(QCoreApplication::applicationDirPath()).filePath(rawPath);
+
+        QString error;
+        if (!m_layerManager.loadLayersFromFile(path, error)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
+
+        const QString message = QString("loaded %1 layers from %2")
+                                    .arg(m_layerManager.layers().size())
+                                    .arg(path);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(message.toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -124,6 +152,6 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
         return TCL_OK;
     }
 
-    Tcl_SetResult(interp, const_cast<char*>("unknown subcommand (expected list or configure)"), TCL_STATIC);
+    Tcl_SetResult(interp, const_cast<char*>("unknown subcommand (expected list, load, or configure)"), TCL_STATIC);
     return TCL_ERROR;
 }

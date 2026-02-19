@@ -34,3 +34,6 @@ add_executable(layout2 ${LAYOUT2_SOURCES})
 
 target_include_directories(layout2 PRIVATE ${TCL_INCLUDE_PATH})
 target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${TCL_LIBRARY})
+
+configure_file(data/example_layers.txt ${CMAKE_CURRENT_BINARY_DIR}/example_layers.txt COPYONLY)
+configure_file(scripts/init.tcl ${CMAKE_CURRENT_BINARY_DIR}/init.tcl COPYONLY)

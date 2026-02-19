@@ -17,9 +17,37 @@ Prototype Qt + Tcl desktop application for IC layout editing.
 
 ```tcl
 layer list
+layer load <layersFilePath>
 layer configure <LayerName> -visible 0|1
 layer configure <LayerName> -selectable 0|1
 ```
+
+## Layers file format
+
+Layer files are plain text with one layer per line:
+
+```text
+<name> <type> <#RRGGBB> <0xPATTERN>
+```
+
+Example (`data/example_layers.txt`):
+
+```text
+Metal1 drawing #1f77b4 0x00FF
+Metal2 drawing #ff7f0e 0x0F0F
+Metal3 drawing #2ca02c 0xAAAA
+```
+
+## Startup initialization
+
+On startup, the application executes `init.tcl` (copied to the build directory).
+The provided script runs:
+
+```tcl
+layer load example_layers.txt
+```
+
+This initializes the layer palette shown in the editor pane.
 
 ## Ubuntu dependencies
 
