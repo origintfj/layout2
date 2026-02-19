@@ -11,6 +11,26 @@
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QtGlobal>
+
+
+namespace {
+QPointF mouseEventPoint(const QMouseEvent* event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position();
+#else
+    return event->localPos();
+#endif
+}
+
+QPointF wheelEventPoint(const QWheelEvent* event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position();
+#else
+    return QPointF(event->pos());
+#endif
+}
+} // namespace
 
 class LayoutCanvas : public QWidget {
     Q_OBJECT
@@ -75,14 +95,14 @@ protected:
 
     void mousePressEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
-            const QPointF world = screenToWorld(event->position());
+            const QPointF world = screenToWorld(mouseEventPoint(event));
             emit commandRequested(QString("canvas press %1 %2 1")
                                       .arg(static_cast<qint64>(world.x()))
                                       .arg(static_cast<qint64>(world.y())));
         }
 
         if (event->button() == Qt::MiddleButton) {
-            m_lastPanPoint = event->position();
+            m_lastPanPoint = mouseEventPoint(event);
             m_middlePanning = true;
         }
 
@@ -90,7 +110,7 @@ protected:
     }
 
     void mouseMoveEvent(QMouseEvent* event) override {
-        const QPointF world = screenToWorld(event->position());
+        const QPointF world = screenToWorld(mouseEventPoint(event));
         const bool leftDown = event->buttons() & Qt::LeftButton;
         emit commandRequested(QString("canvas move %1 %2 %3")
                                   .arg(static_cast<qint64>(world.x()))
@@ -98,8 +118,8 @@ protected:
                                   .arg(leftDown ? 1 : 0));
 
         if (m_middlePanning && (event->buttons() & Qt::MiddleButton)) {
-            const QPointF delta = event->position() - m_lastPanPoint;
-            m_lastPanPoint = event->position();
+            const QPointF delta = mouseEventPoint(event) - m_lastPanPoint;
+            m_lastPanPoint = mouseEventPoint(event);
             emit commandRequested(QString("view pan %1 %2")
                                       .arg(delta.x())
                                       .arg(delta.y()));
@@ -110,7 +130,7 @@ protected:
 
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
-            const QPointF world = screenToWorld(event->position());
+            const QPointF world = screenToWorld(mouseEventPoint(event));
             emit commandRequested(QString("canvas release %1 %2 1")
                                       .arg(static_cast<qint64>(world.x()))
                                       .arg(static_cast<qint64>(world.y())));
@@ -124,7 +144,7 @@ protected:
     }
 
     void wheelEvent(QWheelEvent* event) override {
-        const QPointF pos = event->position();
+        const QPointF pos = wheelEventPoint(event);
         emit commandRequested(QString("view zoom %1 %2 %3")
                                   .arg(event->angleDelta().y())
                                   .arg(pos.x())
