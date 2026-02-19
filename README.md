@@ -21,12 +21,25 @@ layer configure <LayerName> -visible 0|1
 layer configure <LayerName> -selectable 0|1
 ```
 
+## Ubuntu dependencies
+
+Install build tools + Tcl + either Qt5 or Qt6 development packages:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake tcl-dev qtbase5-dev
+# Optional alternative if you prefer Qt6 and your distro provides it:
+# sudo apt install -y qt6-base-dev
+```
+
 ## Build
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ```
+
+`CMakeLists.txt` is set up to use Qt6 when available and automatically fall back to Qt5.
 
 ## Run
 

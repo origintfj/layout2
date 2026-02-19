@@ -4,12 +4,23 @@ project(Layout2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+
 find_package(TCL REQUIRED)
 
-qt_standard_project_setup()
+# Ubuntu LTS versions commonly ship Qt5 by default; prefer Qt6 when available,
+# but gracefully fall back to Qt5.
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if (Qt6_FOUND)
+    set(QT_PACKAGE Qt6)
+else()
+    find_package(Qt5 REQUIRED COMPONENTS Widgets)
+    set(QT_PACKAGE Qt5)
+endif()
 
-qt_add_executable(layout2
+set(LAYOUT2_SOURCES
     src/main.cpp
     src/TclConsoleWindow.cpp
     src/TclConsoleWindow.h
@@ -19,5 +30,7 @@ qt_add_executable(layout2
     src/LayoutEditorWindow.h
 )
 
+add_executable(layout2 ${LAYOUT2_SOURCES})
+
 target_include_directories(layout2 PRIVATE ${TCL_INCLUDE_PATH})
-target_link_libraries(layout2 PRIVATE Qt6::Widgets ${TCL_LIBRARY})
+target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${TCL_LIBRARY})
