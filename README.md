@@ -41,7 +41,7 @@ Metal3 drawing #2ca02c 0xAAAA
 ## Startup initialization
 
 On startup, the application executes `init.tcl` (copied to the build directory).
-The provided script runs:
+An editable example script is provided at `scripts/init.example.tcl`, and the default `scripts/init.tcl` runs:
 
 ```tcl
 layer load example_layers.txt
