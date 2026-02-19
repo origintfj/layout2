@@ -20,6 +20,13 @@ layer list
 layer load <layersFilePath>
 layer configure <LayerName> -visible 0|1
 layer configure <LayerName> -selectable 0|1
+layer active ?<LayerName>?
+tool set <toolName>
+canvas press <x:int64> <y:int64> <button>
+canvas move <x:int64> <y:int64> <leftDown>
+canvas release <x:int64> <y:int64> <button>
+view pan <dx> <dy>
+view zoom <wheelDelta> <anchorX> <anchorY>
 ```
 
 ## Layers file format
@@ -37,6 +44,18 @@ Metal1 drawing #1f77b4 0x00FF
 Metal2 drawing #ff7f0e 0x0F0F
 Metal3 drawing #2ca02c 0xAAAA
 ```
+
+
+## Interaction behavior
+
+- Selecting a row in the layer palette emits `layer active <name>` to set active layer.
+- Pressing `r` in the editor canvas emits `tool set rect`.
+- Rectangle draw flow is Tcl-driven:
+  - `canvas press` starts a rectangle on active layer
+  - `canvas move` updates rubber-band preview
+  - `canvas release` commits the rectangle
+- Coordinates are carried as signed 64-bit integers (`int64`) in Tcl canvas commands.
+- Mouse wheel emits `view zoom ...` and middle-drag emits `view pan ...`; Tcl handlers apply the view transform.
 
 ## Startup initialization
 

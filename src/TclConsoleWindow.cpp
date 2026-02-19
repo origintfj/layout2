@@ -28,6 +28,9 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     setCentralWidget(central);
 
     Tcl_CreateObjCommand(m_interp, "layer", &TclConsoleWindow::LayerCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "tool", &TclConsoleWindow::ToolCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "canvas", &TclConsoleWindow::CanvasCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "view", &TclConsoleWindow::ViewCommandBridge, this, nullptr);
 
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
         const QString command = m_input->text().trimmed();
@@ -44,6 +47,8 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
             m_editorWindow, &LayoutEditorWindow::setLayers);
     connect(&m_layerManager, &LayerManager::layerChanged,
             m_editorWindow, &LayoutEditorWindow::onLayerChanged);
+    connect(&m_layerManager, &LayerManager::activeLayerChanged,
+            m_editorWindow, &LayoutEditorWindow::onActiveLayerChanged);
 
     m_editorWindow->show();
 
@@ -79,13 +84,42 @@ void TclConsoleWindow::executeCommand(const QString& command) {
 }
 
 int TclConsoleWindow::LayerCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
-    auto* self = static_cast<TclConsoleWindow*>(clientData);
-    return self->handleLayerCommand(interp, objc, objv);
+    return static_cast<TclConsoleWindow*>(clientData)->handleLayerCommand(interp, objc, objv);
+}
+
+int TclConsoleWindow::ToolCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleToolCommand(interp, objc, objv);
+}
+
+int TclConsoleWindow::CanvasCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleCanvasCommand(interp, objc, objv);
+}
+
+int TclConsoleWindow::ViewCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleViewCommand(interp, objc, objv);
+}
+
+bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName) {
+    Tcl_WideInt raw = 0;
+    if (Tcl_GetWideIntFromObj(interp, obj, &raw) != TCL_OK) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("invalid %1").arg(fieldName).toUtf8().constData(), -1));
+        return false;
+    }
+    value = static_cast<qint64>(raw);
+    return true;
+}
+
+bool TclConsoleWindow::parseDouble(Tcl_Interp* interp, Tcl_Obj* obj, double& value, const char* fieldName) {
+    if (Tcl_GetDoubleFromObj(interp, obj, &value) != TCL_OK) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("invalid %1").arg(fieldName).toUtf8().constData(), -1));
+        return false;
+    }
+    return true;
 }
 
 int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
     if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: layer <list|load|configure> ..."), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: layer <list|load|configure|active> ..."), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -121,6 +155,27 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
         return TCL_OK;
     }
 
+    if (subCommand == "active") {
+        if (objc == 2) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(m_layerManager.activeLayer().toUtf8().constData(), -1));
+            return TCL_OK;
+        }
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: layer active ?name?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        QString error;
+        const QString layerName = QString::fromUtf8(Tcl_GetString(objv[2]));
+        if (!m_layerManager.setActiveLayer(layerName, error)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
+
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("active layer: %1").arg(m_layerManager.activeLayer()).toUtf8().constData(), -1));
+        return TCL_OK;
+    }
+
     if (subCommand == "configure") {
         if (objc != 5) {
             Tcl_SetResult(interp,
@@ -152,6 +207,161 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
         return TCL_OK;
     }
 
-    Tcl_SetResult(interp, const_cast<char*>("unknown subcommand (expected list, load, or configure)"), TCL_STATIC);
+    Tcl_SetResult(interp, const_cast<char*>("unknown layer subcommand"), TCL_STATIC);
+    return TCL_ERROR;
+}
+
+int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc != 3 || QString::fromUtf8(Tcl_GetString(objv[1])) != "set") {
+        Tcl_SetResult(interp, const_cast<char*>("usage: tool set <name>"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    m_activeTool = QString::fromUtf8(Tcl_GetString(objv[2]));
+    m_editorWindow->onToolChanged(m_activeTool);
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("tool: %1").arg(m_activeTool).toUtf8().constData(), -1));
+    return TCL_OK;
+}
+
+int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc < 5) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: canvas <press|move|release> ..."), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString sub = QString::fromUtf8(Tcl_GetString(objv[1]));
+
+    qint64 x = 0;
+    qint64 y = 0;
+    if (!parseInt64(interp, objv[2], x, "x") || !parseInt64(interp, objv[3], y, "y")) {
+        return TCL_ERROR;
+    }
+
+    if (sub == "press") {
+        int button = 0;
+        if (Tcl_GetIntFromObj(interp, objv[4], &button) != TCL_OK) {
+            Tcl_SetResult(interp, const_cast<char*>("invalid button"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (button == 1 && m_activeTool == "rect" && !m_layerManager.activeLayer().isEmpty()) {
+            m_rectInProgress = true;
+            LayerDefinition active;
+            QString error;
+            if (!m_layerManager.layerByName(m_layerManager.activeLayer(), active, error)) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
+                return TCL_ERROR;
+            }
+            m_previewRectangle = {active.name, active.color, x, y, x, y};
+            m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
+        }
+
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    if (sub == "move") {
+        int leftDown = 0;
+        if (Tcl_GetIntFromObj(interp, objv[4], &leftDown) != TCL_OK) {
+            Tcl_SetResult(interp, const_cast<char*>("invalid leftDown"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (m_rectInProgress && leftDown == 1) {
+            m_previewRectangle.x2 = x;
+            m_previewRectangle.y2 = y;
+            m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
+        }
+
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    if (sub == "release") {
+        int button = 0;
+        if (Tcl_GetIntFromObj(interp, objv[4], &button) != TCL_OK) {
+            Tcl_SetResult(interp, const_cast<char*>("invalid button"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (button == 1 && m_rectInProgress) {
+            m_previewRectangle.x2 = x;
+            m_previewRectangle.y2 = y;
+            m_editorWindow->onRectangleCommitted(m_previewRectangle);
+            m_editorWindow->onRectanglePreviewChanged(false, m_previewRectangle);
+            m_rectInProgress = false;
+        }
+
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    Tcl_SetResult(interp, const_cast<char*>("unknown canvas subcommand"), TCL_STATIC);
+    return TCL_ERROR;
+}
+
+int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc < 2) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: view <zoom|pan> ..."), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString sub = QString::fromUtf8(Tcl_GetString(objv[1]));
+
+    if (sub == "pan") {
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: view pan <dx> <dy>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        double dx = 0.0;
+        double dy = 0.0;
+        if (!parseDouble(interp, objv[2], dx, "dx") || !parseDouble(interp, objv[3], dy, "dy")) {
+            return TCL_ERROR;
+        }
+
+        m_panX += dx;
+        m_panY += dy;
+        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    if (sub == "zoom") {
+        if (objc != 5) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: view zoom <wheelDelta> <anchorX> <anchorY>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        double wheelDelta = 0.0;
+        double anchorX = 0.0;
+        double anchorY = 0.0;
+        if (!parseDouble(interp, objv[2], wheelDelta, "wheelDelta") ||
+            !parseDouble(interp, objv[3], anchorX, "anchorX") ||
+            !parseDouble(interp, objv[4], anchorY, "anchorY")) {
+            return TCL_ERROR;
+        }
+
+        const double factor = wheelDelta > 0 ? 1.15 : 1.0 / 1.15;
+        const double oldZoom = m_zoom;
+        m_zoom *= factor;
+        if (m_zoom < 0.05) {
+            m_zoom = 0.05;
+        }
+        if (m_zoom > 200.0) {
+            m_zoom = 200.0;
+        }
+
+        const double worldX = (anchorX - m_panX) / oldZoom;
+        const double worldY = (anchorY - m_panY) / oldZoom;
+        m_panX = anchorX - (worldX * m_zoom);
+        m_panY = anchorY - (worldY * m_zoom);
+
+        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    Tcl_SetResult(interp, const_cast<char*>("unknown view subcommand"), TCL_STATIC);
     return TCL_ERROR;
 }
