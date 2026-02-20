@@ -1,20 +1,221 @@
 #include "LayoutEditorWindow.h"
 
+#include <QAbstractItemView>
+#include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QVBoxLayout>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QSplitter>
-#include <QFrame>
+#include <QVBoxLayout>
+#include <QWheelEvent>
+#include <QtGlobal>
+
+namespace {
+// Qt5/Qt6 compatibility helper for mouse event coordinates.
+QPointF mouseEventPoint(const QMouseEvent* event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position();
+#else
+    return event->localPos();
+#endif
+}
+
+// Qt5/Qt6 compatibility helper for wheel event coordinates.
+QPointF wheelEventPoint(const QWheelEvent* event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position();
+#else
+    return QPointF(event->pos());
+#endif
+}
+} // namespace
+
+// LayoutCanvas is the drawable area on the right side of the editor.
+//
+// It is intentionally thin: all interactions are converted into Tcl command
+// strings and emitted upward via commandRequested().
+class LayoutCanvas : public QWidget {
+    Q_OBJECT
+public:
+    explicit LayoutCanvas(QWidget* parent = nullptr)
+        : QWidget(parent) {
+        setFocusPolicy(Qt::StrongFocus);
+        setMouseTracking(true);
+    }
+
+    void setRectangles(const QVector<DrawnRectangle>& rectangles) {
+        m_rectangles = rectangles;
+        update();
+    }
+
+    void setPreview(bool enabled, const DrawnRectangle& rectangle) {
+        m_previewEnabled = enabled;
+        m_preview = rectangle;
+        update();
+    }
+
+    void setView(double zoom, double panX, double panY) {
+        m_zoom = zoom;
+        m_panX = panX;
+        m_panY = panY;
+        update();
+    }
+
+signals:
+    void commandRequested(const QString& command);
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+
+        // Background and simple grid for orientation.
+        painter.fillRect(rect(), QColor("#101820"));
+        painter.setPen(QPen(QColor("#2a2a2a"), 1));
+        for (int x = 0; x < width(); x += 40) {
+            painter.drawLine(x, 0, x, height());
+        }
+        for (int y = 0; y < height(); y += 40) {
+            painter.drawLine(0, y, width(), y);
+        }
+
+        // Draw committed geometry first.
+        for (const DrawnRectangle& r : m_rectangles) {
+            drawRectangle(painter, r, false);
+        }
+
+        // Draw rubber-band preview on top.
+        if (m_previewEnabled) {
+            drawRectangle(painter, m_preview, true);
+        }
+    }
+
+    void keyPressEvent(QKeyEvent* event) override {
+        // Keyboard shortcuts are also routed through Tcl commands.
+        if (event->key() == Qt::Key_R) {
+            emit commandRequested("tool set rect");
+            event->accept();
+            return;
+        }
+
+        QWidget::keyPressEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF world = screenToWorld(mouseEventPoint(event));
+            emit commandRequested(QString("canvas press %1 %2 1")
+                                      .arg(static_cast<qint64>(world.x()))
+                                      .arg(static_cast<qint64>(world.y())));
+        }
+
+        if (event->button() == Qt::MiddleButton) {
+            m_lastPanPoint = mouseEventPoint(event);
+            m_middlePanning = true;
+        }
+
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override {
+        // Move events carry current cursor position + left-button state.
+        const QPointF world = screenToWorld(mouseEventPoint(event));
+        const bool leftDown = event->buttons() & Qt::LeftButton;
+        emit commandRequested(QString("canvas move %1 %2 %3")
+                                  .arg(static_cast<qint64>(world.x()))
+                                  .arg(static_cast<qint64>(world.y()))
+                                  .arg(leftDown ? 1 : 0));
+
+        // Middle-button drag emits view pan commands.
+        if (m_middlePanning && (event->buttons() & Qt::MiddleButton)) {
+            const QPointF delta = mouseEventPoint(event) - m_lastPanPoint;
+            m_lastPanPoint = mouseEventPoint(event);
+            emit commandRequested(QString("view pan %1 %2")
+                                      .arg(delta.x())
+                                      .arg(delta.y()));
+        }
+
+        QWidget::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF world = screenToWorld(mouseEventPoint(event));
+            emit commandRequested(QString("canvas release %1 %2 1")
+                                      .arg(static_cast<qint64>(world.x()))
+                                      .arg(static_cast<qint64>(world.y())));
+        }
+
+        if (event->button() == Qt::MiddleButton) {
+            m_middlePanning = false;
+        }
+
+        QWidget::mouseReleaseEvent(event);
+    }
+
+    void wheelEvent(QWheelEvent* event) override {
+        const QPointF pos = wheelEventPoint(event);
+        emit commandRequested(QString("view zoom %1 %2 %3")
+                                  .arg(event->angleDelta().y())
+                                  .arg(pos.x())
+                                  .arg(pos.y()));
+        event->accept();
+    }
+
+private:
+    // Converts world integer coordinates into screen-space doubles.
+    QPointF worldToScreen(qint64 x, qint64 y) const {
+        return QPointF((static_cast<double>(x) * m_zoom) + m_panX,
+                       (static_cast<double>(y) * m_zoom) + m_panY);
+    }
+
+    // Converts screen coordinates into world-space doubles.
+    QPointF screenToWorld(const QPointF& p) const {
+        return QPointF((p.x() - m_panX) / m_zoom,
+                       (p.y() - m_panY) / m_zoom);
+    }
+
+    // Shared draw helper for committed and preview rectangles.
+    void drawRectangle(QPainter& painter, const DrawnRectangle& r, bool preview) {
+        QPointF p1 = worldToScreen(r.x1, r.y1);
+        QPointF p2 = worldToScreen(r.x2, r.y2);
+        QRectF rect = QRectF(p1, p2).normalized();
+
+        QColor c = r.color;
+        if (preview) {
+            c.setAlpha(170);
+        }
+
+        painter.setPen(QPen(c, preview ? 1 : 2, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setBrush(preview ? QBrush(c, Qt::Dense4Pattern) : Qt::NoBrush);
+        painter.drawRect(rect);
+    }
+
+    QVector<DrawnRectangle> m_rectangles;
+    DrawnRectangle m_preview;
+
+    bool m_previewEnabled{false};
+    bool m_middlePanning{false};
+
+    QPointF m_lastPanPoint;
+    double m_zoom{1.0};
+    double m_panX{0.0};
+    double m_panY{0.0};
+};
 
 LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     : QMainWindow(parent),
       m_layerTable(new QTableWidget(this)),
-      m_canvasLabel(new QLabel(this)) {
+      m_canvas(new LayoutCanvas(this)),
+      m_statusLabel(new QLabel(this)) {
     setWindowTitle("Layout Editor");
-    resize(1000, 650);
+    resize(1100, 700);
 
     auto* splitter = new QSplitter(this);
 
+    // Left pane: layer palette table.
     auto* leftPane = new QWidget(splitter);
     auto* leftLayout = new QVBoxLayout(leftPane);
     leftLayout->setContentsMargins(6, 6, 6, 6);
@@ -28,14 +229,16 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     m_layerTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     m_layerTable->verticalHeader()->setVisible(false);
     m_layerTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_layerTable->setSelectionMode(QAbstractItemView::SingleSelection);
     leftLayout->addWidget(m_layerTable);
 
+    // Right pane: status + interactive canvas.
     auto* rightPane = new QFrame(splitter);
-    auto* rightLayout = new QHBoxLayout(rightPane);
-    m_canvasLabel->setAlignment(Qt::AlignCenter);
-    m_canvasLabel->setText("Main layout editing pane\n(Canvas placeholder)");
-    m_canvasLabel->setStyleSheet("background:#101820; color:#eeeeee; border:1px solid #555;");
-    rightLayout->addWidget(m_canvasLabel);
+    auto* rightLayout = new QVBoxLayout(rightPane);
+    m_statusLabel->setText("Active layer: <none> | Tool: <none>");
+    m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:4px;");
+    rightLayout->addWidget(m_statusLabel);
+    rightLayout->addWidget(m_canvas);
 
     splitter->addWidget(leftPane);
     splitter->addWidget(rightPane);
@@ -44,12 +247,16 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
 
     setCentralWidget(splitter);
 
+    // UI events are converted into Tcl command strings.
     connect(m_layerTable, &QTableWidget::cellChanged, this, &LayoutEditorWindow::onCellChanged);
+    connect(m_layerTable, &QTableWidget::currentCellChanged,
+            this, [this](int currentRow, int, int previousRow, int) { onCurrentRowChanged(currentRow, previousRow); });
+    connect(m_canvas, &LayoutCanvas::commandRequested, this, &LayoutEditorWindow::commandRequested);
 }
 
 QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
     auto* item = new QTableWidgetItem(text);
-    item->setFlags(Qt::ItemIsEnabled);
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     return item;
 }
 
@@ -61,17 +268,22 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     for (int row = 0; row < layers.size(); ++row) {
         applyLayerToRow(row, layers[row]);
     }
+
     m_internalUpdate = false;
 }
 
 void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) {
+    // Color/pattern swatch column.
     auto* swatch = new QTableWidgetItem(QString("%1 %2").arg(layer.color.name(), layer.pattern));
     swatch->setBackground(layer.color);
-    swatch->setFlags(Qt::ItemIsEnabled);
+    swatch->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     m_layerTable->setItem(row, 0, swatch);
+
+    // Name and type columns.
     m_layerTable->setItem(row, 1, makeReadOnlyItem(layer.name));
     m_layerTable->setItem(row, 2, makeReadOnlyItem(layer.type));
 
+    // Visibility and selectability checkboxes.
     auto* visibleItem = new QTableWidgetItem();
     visibleItem->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
     visibleItem->setCheckState(layer.visible ? Qt::Checked : Qt::Unchecked);
@@ -89,10 +301,56 @@ void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer)
     }
 
     m_layers[index] = layer;
+
+    // Apply state from model while muting feedback events.
     m_internalUpdate = true;
-    m_layerTable->item(index, 3)->setCheckState(layer.visible ? Qt::Checked : Qt::Unchecked);
-    m_layerTable->item(index, 4)->setCheckState(layer.selectable ? Qt::Checked : Qt::Unchecked);
+    if (m_layerTable->item(index, 3)) {
+        m_layerTable->item(index, 3)->setCheckState(layer.visible ? Qt::Checked : Qt::Unchecked);
+    }
+    if (m_layerTable->item(index, 4)) {
+        m_layerTable->item(index, 4)->setCheckState(layer.selectable ? Qt::Checked : Qt::Unchecked);
+    }
     m_internalUpdate = false;
+}
+
+void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName) {
+    // Update status label while preserving the existing tool text suffix.
+    QString status = m_statusLabel->text();
+    const int toolIdx = status.indexOf("| Tool:");
+    const QString toolPart = toolIdx >= 0 ? status.mid(toolIdx + 2) : "Tool: <none>";
+    m_statusLabel->setText(QString("Active layer: %1 | %2").arg(layerName, toolPart));
+
+    // Highlight corresponding row (without retriggering command emission).
+    m_internalUpdate = true;
+    for (int row = 0; row < m_layers.size(); ++row) {
+        if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0) {
+            m_layerTable->setCurrentCell(row, 0);
+            break;
+        }
+    }
+    m_internalUpdate = false;
+}
+
+void LayoutEditorWindow::onToolChanged(const QString& toolName) {
+    QString status = m_statusLabel->text();
+    const int idx = status.indexOf("| Tool:");
+    if (idx >= 0) {
+        status = status.left(idx);
+    }
+    m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
+}
+
+void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY) {
+    m_canvas->setView(zoom, panX, panY);
+}
+
+void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle) {
+    m_canvas->setPreview(enabled, rectangle);
+}
+
+void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {
+    m_rectangles.push_back(rectangle);
+    m_canvas->setRectangles(m_rectangles);
 }
 
 void LayoutEditorWindow::onCellChanged(int row, int column) {
@@ -100,6 +358,7 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
         return;
     }
 
+    // Only visibility/selectability columns map to layer configure commands.
     if (column != 3 && column != 4) {
         return;
     }
@@ -112,13 +371,9 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
     const bool requestedValue = item->checkState() == Qt::Checked;
     const LayerDefinition& current = m_layers[row];
 
-    // Revert visual state immediately; interpreter command execution will apply official state.
+    // Revert immediate local visual change; Tcl command execution drives truth.
     m_internalUpdate = true;
-    if (column == 3) {
-        item->setCheckState(current.visible ? Qt::Checked : Qt::Unchecked);
-    } else {
-        item->setCheckState(current.selectable ? Qt::Checked : Qt::Unchecked);
-    }
+    item->setCheckState((column == 3 ? current.visible : current.selectable) ? Qt::Checked : Qt::Unchecked);
     m_internalUpdate = false;
 
     const QString option = column == 3 ? "-visible" : "-selectable";
@@ -126,3 +381,14 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
                               .arg(current.name, option)
                               .arg(requestedValue ? 1 : 0));
 }
+
+void LayoutEditorWindow::onCurrentRowChanged(int currentRow, int) {
+    if (m_internalUpdate || currentRow < 0 || currentRow >= m_layers.size()) {
+        return;
+    }
+
+    // Row selection sets active layer via Tcl command.
+    emit commandRequested(QString("layer active %1").arg(m_layers[currentRow].name));
+}
+
+#include "LayoutEditorWindow.moc"
