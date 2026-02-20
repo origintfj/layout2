@@ -36,7 +36,7 @@ QPointF wheelEventPoint(const QWheelEvent* event) {
 #endif
 }
 
-QBrush patternBrushFor(const QColor& baseColor, const QString& pattern) {
+QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     bool ok = false;
     const quint16 patternValue = static_cast<quint16>(pattern.toUInt(&ok, 0) & 0xFFFFu);
     if (!ok) {
@@ -217,13 +217,14 @@ private:
         QPointF p2 = worldToScreen(r.x2, r.y2);
         QRectF rect = QRectF(p1, p2).normalized();
 
-        QColor c = r.color;
-        if (preview) {
-            c.setAlpha(170);
-        }
+        QColor fillColor = r.color;
+        fillColor.setAlpha(preview ? 90 : 140);
 
-        painter.setPen(QPen(c, 1, preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(patternBrushFor(c, r.pattern));
+        QColor outlineColor = r.color;
+        outlineColor.setAlpha(preview ? 180 : 220);
+
+        painter.setPen(QPen(outlineColor, 1, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setBrush(patternBrushFor(fillColor, r.pattern));
         painter.drawRect(rect);
     }
 
