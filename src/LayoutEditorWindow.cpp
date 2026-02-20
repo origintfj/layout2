@@ -331,6 +331,9 @@ QBrush LayoutEditorWindow::makePatternBrush(const LayerDefinition& layer) const 
 void LayoutEditorWindow::updateActiveLayerHighlight() {
     const QColor highlight(53, 86, 118, 130);
 
+    const bool wasInternalUpdate = m_internalUpdate;
+    m_internalUpdate = true;
+
     for (int row = 0; row < m_layers.size(); ++row) {
         const bool isActive = m_layers[row].name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0;
         for (int column = 1; column < m_layerTable->columnCount(); ++column) {
@@ -339,6 +342,8 @@ void LayoutEditorWindow::updateActiveLayerHighlight() {
             }
         }
     }
+
+    m_internalUpdate = wasInternalUpdate;
 }
 
 void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) {
@@ -454,10 +459,17 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
 
     const bool requestedValue = item->checkState() == Qt::Checked;
     const LayerDefinition& current = m_layers[row];
+    const bool currentValue = column == 3 ? current.visible : current.selectable;
+
+    // Non-checkstate updates (for example row highlight styling) can also trigger
+    // cellChanged; ignore those when the value did not actually change.
+    if (requestedValue == currentValue) {
+        return;
+    }
 
     // Revert immediate local visual change; Tcl command execution drives truth.
     m_internalUpdate = true;
-    item->setCheckState((column == 3 ? current.visible : current.selectable) ? Qt::Checked : Qt::Unchecked);
+    item->setCheckState(currentValue ? Qt::Checked : Qt::Unchecked);
     m_internalUpdate = false;
 
     const QString option = column == 3 ? "-visible" : "-selectable";
