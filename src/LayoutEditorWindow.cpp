@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QSize>
+#include <QSizePolicy>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -33,6 +34,30 @@ QPointF wheelEventPoint(const QWheelEvent* event) {
 #else
     return QPointF(event->pos());
 #endif
+}
+
+QBrush patternBrushFor(const QColor& baseColor, const QString& pattern) {
+    bool ok = false;
+    const quint16 patternValue = static_cast<quint16>(pattern.toUInt(&ok, 0) & 0xFFFFu);
+    if (!ok) {
+        return QBrush(baseColor, Qt::SolidPattern);
+    }
+
+    QPixmap pixmap(8, 8);
+    pixmap.fill(baseColor);
+    QPainter painter(&pixmap);
+    painter.setPen(QColor(0, 0, 0, 120));
+
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            const int bitIndex = ((y % 4) * 4) + (x % 4);
+            if ((patternValue >> bitIndex) & 0x1u) {
+                painter.drawPoint(x, y);
+            }
+        }
+    }
+
+    return QBrush(pixmap);
 }
 } // namespace
 
@@ -197,8 +222,8 @@ private:
             c.setAlpha(170);
         }
 
-        painter.setPen(QPen(c, preview ? 1 : 2, preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(preview ? QBrush(c, Qt::Dense4Pattern) : Qt::NoBrush);
+        painter.setPen(QPen(c, 1, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setBrush(patternBrushFor(c, r.pattern));
         painter.drawRect(rect);
     }
 
@@ -222,7 +247,12 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     setWindowTitle("Layout Editor");
     resize(1100, 700);
 
-    auto* splitter = new QSplitter(this);
+    auto* central = new QWidget(this);
+    auto* centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+
+    auto* splitter = new QSplitter(central);
 
     // Left pane: layer palette table.
     auto* leftPane = new QWidget(splitter);
@@ -246,12 +276,10 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
         "}");
     leftLayout->addWidget(m_layerTable);
 
-    // Right pane: status + interactive canvas.
+    // Right pane: interactive canvas.
     auto* rightPane = new QFrame(splitter);
     auto* rightLayout = new QVBoxLayout(rightPane);
-    m_statusLabel->setText("Active layer: <none> | Tool: <none>");
-    m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:4px;");
-    rightLayout->addWidget(m_statusLabel);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->addWidget(m_canvas);
 
     splitter->addWidget(leftPane);
@@ -259,7 +287,13 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 3);
 
-    setCentralWidget(splitter);
+    m_statusLabel->setText("Active layer: <none> | Tool: <none>");
+    m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:2px 6px;");
+    m_statusLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    centralLayout->addWidget(splitter);
+    centralLayout->addWidget(m_statusLabel);
+    setCentralWidget(central);
 
     // UI events are converted into Tcl command strings.
     connect(m_layerTable, &QTableWidget::cellChanged, this, &LayoutEditorWindow::onCellChanged);
@@ -289,28 +323,7 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
 }
 
 QBrush LayoutEditorWindow::makePatternBrush(const LayerDefinition& layer) const {
-    bool ok = false;
-    const quint16 patternValue = static_cast<quint16>(layer.pattern.toUInt(&ok, 0) & 0xFFFFu);
-
-    if (!ok) {
-        return QBrush(layer.color, Qt::SolidPattern);
-    }
-
-    QPixmap pixmap(8, 8);
-    pixmap.fill(layer.color);
-    QPainter painter(&pixmap);
-    painter.setPen(QColor(0, 0, 0, 120));
-
-    for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-            const int bitIndex = ((y % 4) * 4) + (x % 4);
-            if ((patternValue >> bitIndex) & 0x1u) {
-                painter.drawPoint(x, y);
-            }
-        }
-    }
-
-    return QBrush(pixmap);
+    return patternBrushFor(layer.color, layer.pattern);
 }
 
 void LayoutEditorWindow::updateActiveLayerHighlight() {
@@ -404,7 +417,7 @@ void LayoutEditorWindow::onToolChanged(const QString& toolName) {
     QString status = m_statusLabel->text();
     const int idx = status.indexOf("| Tool:");
     if (idx >= 0) {
-        status = status.left(idx);
+        status = status.left(idx).trimmed();
     }
     m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
 }

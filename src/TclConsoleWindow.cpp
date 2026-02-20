@@ -258,7 +258,7 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
                 return TCL_ERROR;
             }
 
-            m_previewRectangle = {active.name, active.color, x, y, x, y};
+            m_previewRectangle = {active.name, active.color, active.pattern, x, y, x, y};
             m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
         }
 

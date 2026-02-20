@@ -13,6 +13,7 @@
 struct DrawnRectangle {
     QString layerName;
     QColor color;
+    QString pattern;
     qint64 x1;
     qint64 y1;
     qint64 x2;
