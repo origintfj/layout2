@@ -241,9 +241,9 @@ private:
 
 LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     : QMainWindow(parent),
-      m_layerTable(new QTableWidget(this)),
-      m_canvas(new LayoutCanvas(this)),
-      m_statusLabel(new QLabel(this)) {
+      m_layerTable(new QTableWidget()),
+      m_canvas(new LayoutCanvas()),
+      m_statusLabel(new QLabel()) {
     setWindowTitle("Layout Editor");
     resize(1100, 700);
 
@@ -286,6 +286,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     splitter->addWidget(rightPane);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 3);
+    splitter->setSizes({280, 820});
 
     m_statusLabel->setText("Active layer: <none> | Tool: <none>");
     m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:2px 6px;");
