@@ -13,6 +13,7 @@
 struct DrawnRectangle {
     QString layerName;
     QColor color;
+    QString pattern;
     qint64 x1;
     qint64 y1;
     qint64 x2;
@@ -60,6 +61,8 @@ private slots:
     void onCurrentRowChanged(int currentRow, int previousRow);
 
 private:
+    QBrush makePatternBrush(const LayerDefinition& layer) const;
+    void updateActiveLayerHighlight();
     void applyLayerToRow(int row, const LayerDefinition& layer);
     QTableWidgetItem* makeReadOnlyItem(const QString& text);
 
@@ -68,6 +71,7 @@ private:
     QLabel* m_statusLabel;
 
     QVector<LayerDefinition> m_layers;
+    QString m_activeLayerName;
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
     // Committed rectangles currently shown on canvas.

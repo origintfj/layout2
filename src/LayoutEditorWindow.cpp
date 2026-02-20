@@ -5,9 +5,13 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPixmap>
+#include <QSize>
+#include <QSizePolicy>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -30,6 +34,30 @@ QPointF wheelEventPoint(const QWheelEvent* event) {
 #else
     return QPointF(event->pos());
 #endif
+}
+
+QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
+    bool ok = false;
+    const quint16 patternValue = static_cast<quint16>(pattern.toUInt(&ok, 0) & 0xFFFFu);
+    if (!ok) {
+        return QBrush(baseColor, Qt::SolidPattern);
+    }
+
+    QPixmap pixmap(8, 8);
+    pixmap.fill(baseColor);
+    QPainter painter(&pixmap);
+    painter.setPen(QColor(0, 0, 0, 120));
+
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            const int bitIndex = ((y % 4) * 4) + (x % 4);
+            if ((patternValue >> bitIndex) & 0x1u) {
+                painter.drawPoint(x, y);
+            }
+        }
+    }
+
+    return QBrush(pixmap);
 }
 } // namespace
 
@@ -96,6 +124,12 @@ protected:
         // Keyboard shortcuts are also routed through Tcl commands.
         if (event->key() == Qt::Key_R) {
             emit commandRequested("tool set rect");
+            event->accept();
+            return;
+        }
+
+        if (event->key() == Qt::Key_Escape) {
+            emit commandRequested("tool set none");
             event->accept();
             return;
         }
@@ -183,13 +217,14 @@ private:
         QPointF p2 = worldToScreen(r.x2, r.y2);
         QRectF rect = QRectF(p1, p2).normalized();
 
-        QColor c = r.color;
-        if (preview) {
-            c.setAlpha(170);
-        }
+        QColor fillColor = r.color;
+        fillColor.setAlpha(preview ? 90 : 140);
 
-        painter.setPen(QPen(c, preview ? 1 : 2, preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(preview ? QBrush(c, Qt::Dense4Pattern) : Qt::NoBrush);
+        QColor outlineColor = r.color;
+        outlineColor.setAlpha(preview ? 180 : 220);
+
+        painter.setPen(QPen(outlineColor, 1, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setBrush(patternBrushFor(fillColor, r.pattern));
         painter.drawRect(rect);
     }
 
@@ -207,13 +242,18 @@ private:
 
 LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     : QMainWindow(parent),
-      m_layerTable(new QTableWidget(this)),
-      m_canvas(new LayoutCanvas(this)),
-      m_statusLabel(new QLabel(this)) {
+      m_layerTable(new QTableWidget()),
+      m_canvas(new LayoutCanvas()),
+      m_statusLabel(new QLabel()) {
     setWindowTitle("Layout Editor");
     resize(1100, 700);
 
-    auto* splitter = new QSplitter(this);
+    auto* central = new QWidget(this);
+    auto* centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+
+    auto* splitter = new QSplitter(central);
 
     // Left pane: layer palette table.
     auto* leftPane = new QWidget(splitter);
@@ -230,22 +270,32 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     m_layerTable->verticalHeader()->setVisible(false);
     m_layerTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_layerTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_layerTable->setStyleSheet(
+        "QTableWidget::item:selected {"
+        "background: transparent;"
+        "color: palette(text);"
+        "}");
     leftLayout->addWidget(m_layerTable);
 
-    // Right pane: status + interactive canvas.
+    // Right pane: interactive canvas.
     auto* rightPane = new QFrame(splitter);
     auto* rightLayout = new QVBoxLayout(rightPane);
-    m_statusLabel->setText("Active layer: <none> | Tool: <none>");
-    m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:4px;");
-    rightLayout->addWidget(m_statusLabel);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->addWidget(m_canvas);
 
     splitter->addWidget(leftPane);
     splitter->addWidget(rightPane);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 3);
+    splitter->setSizes({280, 820});
 
-    setCentralWidget(splitter);
+    m_statusLabel->setText("Active layer: <none> | Tool: <none>");
+    m_statusLabel->setStyleSheet("color:#ddd; background:#222; padding:2px 6px;");
+    m_statusLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    centralLayout->addWidget(splitter);
+    centralLayout->addWidget(m_statusLabel);
+    setCentralWidget(central);
 
     // UI events are converted into Tcl command strings.
     connect(m_layerTable, &QTableWidget::cellChanged, this, &LayoutEditorWindow::onCellChanged);
@@ -263,6 +313,7 @@ QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
 void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     m_internalUpdate = true;
     m_layers = layers;
+    m_activeLayerName = layers.isEmpty() ? QString() : layers[0].name;
     m_layerTable->setRowCount(layers.size());
 
     for (int row = 0; row < layers.size(); ++row) {
@@ -270,13 +321,46 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     }
 
     m_internalUpdate = false;
+    updateActiveLayerHighlight();
+}
+
+QBrush LayoutEditorWindow::makePatternBrush(const LayerDefinition& layer) const {
+    return patternBrushFor(layer.color, layer.pattern);
+}
+
+void LayoutEditorWindow::updateActiveLayerHighlight() {
+    const QColor highlight(53, 86, 118, 130);
+
+    const bool wasInternalUpdate = m_internalUpdate;
+    m_internalUpdate = true;
+
+    for (int row = 0; row < m_layers.size(); ++row) {
+        const bool isActive = m_layers[row].name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0;
+        for (int column = 1; column < m_layerTable->columnCount(); ++column) {
+            if (auto* item = m_layerTable->item(row, column)) {
+                item->setBackground(isActive ? QBrush(highlight) : QBrush(Qt::NoBrush));
+            }
+        }
+    }
+
+    m_internalUpdate = wasInternalUpdate;
 }
 
 void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) {
     // Color/pattern swatch column.
-    auto* swatch = new QTableWidgetItem(QString("%1 %2").arg(layer.color.name(), layer.pattern));
-    swatch->setBackground(layer.color);
+    auto* swatch = new QTableWidgetItem();
+    swatch->setText(QString());
     swatch->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+    swatch->setSizeHint(QSize(24, 24));
+
+    QPixmap swatchPixmap(16, 16);
+    swatchPixmap.fill(Qt::transparent);
+    QPainter swatchPainter(&swatchPixmap);
+    swatchPainter.fillRect(swatchPixmap.rect(), makePatternBrush(layer));
+    swatchPainter.setPen(QColor("#1a1a1a"));
+    swatchPainter.drawRect(swatchPixmap.rect().adjusted(0, 0, -1, -1));
+    swatch->setIcon(QIcon(swatchPixmap));
+
     m_layerTable->setItem(row, 0, swatch);
 
     // Name and type columns.
@@ -293,6 +377,8 @@ void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) 
     selectableItem->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
     selectableItem->setCheckState(layer.selectable ? Qt::Checked : Qt::Unchecked);
     m_layerTable->setItem(row, 4, selectableItem);
+
+    updateActiveLayerHighlight();
 }
 
 void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer) {
@@ -321,21 +407,24 @@ void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName) {
     m_statusLabel->setText(QString("Active layer: %1 | %2").arg(layerName, toolPart));
 
     // Highlight corresponding row (without retriggering command emission).
+    m_activeLayerName = layerName;
     m_internalUpdate = true;
     for (int row = 0; row < m_layers.size(); ++row) {
         if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0) {
-            m_layerTable->setCurrentCell(row, 0);
+            m_layerTable->setCurrentCell(row, 1);
             break;
         }
     }
     m_internalUpdate = false;
+
+    updateActiveLayerHighlight();
 }
 
 void LayoutEditorWindow::onToolChanged(const QString& toolName) {
     QString status = m_statusLabel->text();
     const int idx = status.indexOf("| Tool:");
     if (idx >= 0) {
-        status = status.left(idx);
+        status = status.left(idx).trimmed();
     }
     m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
 }
@@ -370,10 +459,17 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
 
     const bool requestedValue = item->checkState() == Qt::Checked;
     const LayerDefinition& current = m_layers[row];
+    const bool currentValue = column == 3 ? current.visible : current.selectable;
+
+    // Non-checkstate updates (for example row highlight styling) can also trigger
+    // cellChanged; ignore those when the value did not actually change.
+    if (requestedValue == currentValue) {
+        return;
+    }
 
     // Revert immediate local visual change; Tcl command execution drives truth.
     m_internalUpdate = true;
-    item->setCheckState((column == 3 ? current.visible : current.selectable) ? Qt::Checked : Qt::Unchecked);
+    item->setCheckState(currentValue ? Qt::Checked : Qt::Unchecked);
     m_internalUpdate = false;
 
     const QString option = column == 3 ? "-visible" : "-selectable";
