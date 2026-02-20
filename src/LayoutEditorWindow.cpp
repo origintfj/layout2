@@ -5,9 +5,12 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPixmap>
+#include <QSize>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -96,6 +99,12 @@ protected:
         // Keyboard shortcuts are also routed through Tcl commands.
         if (event->key() == Qt::Key_R) {
             emit commandRequested("tool set rect");
+            event->accept();
+            return;
+        }
+
+        if (event->key() == Qt::Key_Escape) {
+            emit commandRequested("tool set none");
             event->accept();
             return;
         }
@@ -230,6 +239,11 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     m_layerTable->verticalHeader()->setVisible(false);
     m_layerTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_layerTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_layerTable->setStyleSheet(
+        "QTableWidget::item:selected {"
+        "background: transparent;"
+        "color: palette(text);"
+        "}");
     leftLayout->addWidget(m_layerTable);
 
     // Right pane: status + interactive canvas.
@@ -263,6 +277,7 @@ QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
 void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     m_internalUpdate = true;
     m_layers = layers;
+    m_activeLayerName = layers.isEmpty() ? QString() : layers[0].name;
     m_layerTable->setRowCount(layers.size());
 
     for (int row = 0; row < layers.size(); ++row) {
@@ -270,13 +285,62 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     }
 
     m_internalUpdate = false;
+    updateActiveLayerHighlight();
+}
+
+QBrush LayoutEditorWindow::makePatternBrush(const LayerDefinition& layer) const {
+    bool ok = false;
+    const quint16 patternValue = static_cast<quint16>(layer.pattern.toUInt(&ok, 0) & 0xFFFFu);
+
+    if (!ok) {
+        return QBrush(layer.color, Qt::SolidPattern);
+    }
+
+    QPixmap pixmap(8, 8);
+    pixmap.fill(layer.color);
+    QPainter painter(&pixmap);
+    painter.setPen(QColor(0, 0, 0, 120));
+
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            const int bitIndex = ((y % 4) * 4) + (x % 4);
+            if ((patternValue >> bitIndex) & 0x1u) {
+                painter.drawPoint(x, y);
+            }
+        }
+    }
+
+    return QBrush(pixmap);
+}
+
+void LayoutEditorWindow::updateActiveLayerHighlight() {
+    const QColor highlight(53, 86, 118, 130);
+
+    for (int row = 0; row < m_layers.size(); ++row) {
+        const bool isActive = m_layers[row].name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0;
+        for (int column = 1; column < m_layerTable->columnCount(); ++column) {
+            if (auto* item = m_layerTable->item(row, column)) {
+                item->setBackground(isActive ? QBrush(highlight) : QBrush(Qt::NoBrush));
+            }
+        }
+    }
 }
 
 void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) {
     // Color/pattern swatch column.
-    auto* swatch = new QTableWidgetItem(QString("%1 %2").arg(layer.color.name(), layer.pattern));
-    swatch->setBackground(layer.color);
+    auto* swatch = new QTableWidgetItem();
+    swatch->setText(QString());
     swatch->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+    swatch->setSizeHint(QSize(24, 24));
+
+    QPixmap swatchPixmap(16, 16);
+    swatchPixmap.fill(Qt::transparent);
+    QPainter swatchPainter(&swatchPixmap);
+    swatchPainter.fillRect(swatchPixmap.rect(), makePatternBrush(layer));
+    swatchPainter.setPen(QColor("#1a1a1a"));
+    swatchPainter.drawRect(swatchPixmap.rect().adjusted(0, 0, -1, -1));
+    swatch->setIcon(QIcon(swatchPixmap));
+
     m_layerTable->setItem(row, 0, swatch);
 
     // Name and type columns.
@@ -293,6 +357,8 @@ void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) 
     selectableItem->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
     selectableItem->setCheckState(layer.selectable ? Qt::Checked : Qt::Unchecked);
     m_layerTable->setItem(row, 4, selectableItem);
+
+    updateActiveLayerHighlight();
 }
 
 void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer) {
@@ -321,14 +387,17 @@ void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName) {
     m_statusLabel->setText(QString("Active layer: %1 | %2").arg(layerName, toolPart));
 
     // Highlight corresponding row (without retriggering command emission).
+    m_activeLayerName = layerName;
     m_internalUpdate = true;
     for (int row = 0; row < m_layers.size(); ++row) {
         if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0) {
-            m_layerTable->setCurrentCell(row, 0);
+            m_layerTable->setCurrentCell(row, 1);
             break;
         }
     }
     m_internalUpdate = false;
+
+    updateActiveLayerHighlight();
 }
 
 void LayoutEditorWindow::onToolChanged(const QString& toolName) {
