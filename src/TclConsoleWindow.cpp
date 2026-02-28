@@ -1,8 +1,10 @@
 #include "TclConsoleWindow.h"
 
 #include <QCoreApplication>
+#include <QAction>
 #include <QDir>
 #include <QLineEdit>
+#include <QMenuBar>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QVBoxLayout>
@@ -34,6 +36,19 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     Tcl_CreateObjCommand(m_interp, "view", &TclConsoleWindow::ViewCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "bindkey", &TclConsoleWindow::BindKeyCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "transcript", &TclConsoleWindow::TranscriptCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "app", &TclConsoleWindow::AppCommandBridge, this, nullptr);
+
+    auto* fileMenu = menuBar()->addMenu("File");
+    auto* exitAction = fileMenu->addAction("Exit");
+    connect(exitAction, &QAction::triggered, this, [this]() {
+        executeCommand("app exit");
+    });
+
+    auto* toolsMenu = menuBar()->addMenu("Tools");
+    auto* layoutEditorAction = toolsMenu->addAction("Layout Editor");
+    connect(layoutEditorAction, &QAction::triggered, this, [this]() {
+        executeCommand("app layout_editor");
+    });
 
     // Manual command entry from console input line.
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
@@ -130,6 +145,10 @@ int TclConsoleWindow::TranscriptCommandBridge(ClientData clientData, Tcl_Interp*
     return static_cast<TclConsoleWindow*>(clientData)->handleTranscriptCommand(interp, objc, objv);
 }
 
+int TclConsoleWindow::AppCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleAppCommand(interp, objc, objv);
+}
+
 bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName) {
     Tcl_WideInt raw = 0;
     if (Tcl_GetWideIntFromObj(interp, obj, &raw) != TCL_OK) {
@@ -215,6 +234,32 @@ int TclConsoleWindow::handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_
     }
 
     Tcl_SetResult(interp, const_cast<char*>("unknown transcript filter subcommand"), TCL_STATIC);
+    return TCL_ERROR;
+}
+
+int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc != 2) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: app <exit|layout_editor>"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
+
+    if (subCommand == "exit") {
+        close();
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("closing", -1));
+        return TCL_OK;
+    }
+
+    if (subCommand == "layout_editor") {
+        m_editorWindow->show();
+        m_editorWindow->raise();
+        m_editorWindow->activateWindow();
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("layout editor shown", -1));
+        return TCL_OK;
+    }
+
+    Tcl_SetResult(interp, const_cast<char*>("unknown app subcommand"), TCL_STATIC);
     return TCL_ERROR;
 }
 
