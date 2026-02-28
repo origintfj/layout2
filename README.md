@@ -51,7 +51,7 @@ Layer files are plain text with one layer per line:
 Example (`data/example_layers.txt`):
 
 ```text
-Metal1 drawing #1f77b4 0x00FF
+Metal1 drawing #1f77b4 0x8040201008040201
 Metal2 drawing #ff7f0e 0x0F0F
 Metal3 drawing #2ca02c 0xAAAA
 ```
