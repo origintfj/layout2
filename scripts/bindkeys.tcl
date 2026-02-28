@@ -6,7 +6,7 @@
 # Examples:
 #   bindkey set R {tool set rect}
 #   bindkey set Esc {tool set none}
-#   bindkey set Ctrl+1 {layer active Metal1}
+#   bindkey set Ctrl+1 {layer active Metal1 drawing}
 
 bindkey set R {tool set rect}
 bindkey set S {tool set select}

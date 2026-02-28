@@ -1,6 +1,7 @@
 #include "LayerManager.h"
 
 #include <QFile>
+#include <QHash>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTextStream>
@@ -13,24 +14,48 @@ const QVector<LayerDefinition>& LayerManager::layers() const {
     return m_layers;
 }
 
-QString LayerManager::activeLayer() const {
-    return m_activeLayer;
+QString LayerManager::activeLayerName() const {
+    if (m_activeLayerIndex < 0 || m_activeLayerIndex >= m_layers.size()) {
+        return QString();
+    }
+    return m_layers[m_activeLayerIndex].name;
 }
 
-int LayerManager::findLayerIndex(const QString& layerName) const {
+QString LayerManager::activeLayerType() const {
+    if (m_activeLayerIndex < 0 || m_activeLayerIndex >= m_layers.size()) {
+        return QString();
+    }
+    return m_layers[m_activeLayerIndex].type;
+}
+
+bool LayerManager::activeLayerDefinition(LayerDefinition& layer) const {
+    if (m_activeLayerIndex < 0 || m_activeLayerIndex >= m_layers.size()) {
+        return false;
+    }
+
+    layer = m_layers[m_activeLayerIndex];
+    return true;
+}
+
+int LayerManager::findLayerIndex(const QString& layerName, const QString& layerType) const {
     // Case-insensitive lookup keeps Tcl UX forgiving.
     for (int i = 0; i < m_layers.size(); ++i) {
-        if (m_layers[i].name.compare(layerName, Qt::CaseInsensitive) == 0) {
+        if (m_layers[i].name.compare(layerName, Qt::CaseInsensitive) == 0
+            && m_layers[i].type.compare(layerType, Qt::CaseInsensitive) == 0) {
             return i;
         }
     }
     return -1;
 }
 
-bool LayerManager::configureLayer(const QString& layerName, const QString& option, bool value, QString& error) {
-    const int index = findLayerIndex(layerName);
+bool LayerManager::configureLayer(const QString& layerName,
+                                  const QString& layerType,
+                                  const QString& option,
+                                  bool value,
+                                  QString& error) {
+    const int index = findLayerIndex(layerName, layerType);
     if (index < 0) {
-        error = QString("Unknown layer '%1'").arg(layerName);
+        error = QString("Unknown layer '%1' of type '%2'").arg(layerName, layerType);
         return false;
     }
 
@@ -59,6 +84,7 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
     }
 
     QVector<LayerDefinition> loaded;
+    QHash<QString, int> firstLineByIdentity;
     QTextStream stream(&file);
     int lineNo = 0;
 
@@ -81,6 +107,15 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
             return false;
         }
 
+        const QString identityKey = parts[0].toLower() + QChar(0x1F) + parts[1].toLower();
+        if (firstLineByIdentity.contains(identityKey)) {
+            error = QString("Duplicate layer identity '%1' type '%2' at line %3 (first declared at line %4)")
+                        .arg(parts[0], parts[1])
+                        .arg(lineNo)
+                        .arg(firstLineByIdentity.value(identityKey));
+            return false;
+        }
+
         const QColor color(parts[2]);
         if (!color.isValid()) {
             error = QString("Invalid color '%1' at line %2").arg(parts[2]).arg(lineNo);
@@ -99,6 +134,7 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
 
         // New layers are visible/selectable by default.
         loaded.push_back({parts[0], parts[1], color, parts[3], true, true});
+        firstLineByIdentity.insert(identityKey, lineNo);
     }
 
     if (loaded.isEmpty()) {
@@ -108,34 +144,36 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
 
     // Replace model atomically and choose first layer as active.
     m_layers = loaded;
-    m_activeLayer = m_layers[0].name;
+    m_activeLayerIndex = 0;
 
     emit layersReset(m_layers);
-    emit activeLayerChanged(m_activeLayer);
+    emit activeLayerChanged(activeLayerName(), activeLayerType());
     return true;
 }
 
-bool LayerManager::setActiveLayer(const QString& layerName, QString& error) {
-    const int index = findLayerIndex(layerName);
+bool LayerManager::setActiveLayer(const QString& layerName, const QString& layerType, QString& error) {
+    const int index = findLayerIndex(layerName, layerType);
     if (index < 0) {
-        error = QString("Unknown layer '%1'").arg(layerName);
+        error = QString("Unknown layer '%1' of type '%2'").arg(layerName, layerType);
         return false;
     }
 
-    const QString resolved = m_layers[index].name;
-    if (resolved == m_activeLayer) {
+    if (index == m_activeLayerIndex) {
         return true;
     }
 
-    m_activeLayer = resolved;
-    emit activeLayerChanged(m_activeLayer);
+    m_activeLayerIndex = index;
+    emit activeLayerChanged(activeLayerName(), activeLayerType());
     return true;
 }
 
-bool LayerManager::layerByName(const QString& layerName, LayerDefinition& layer, QString& error) const {
-    const int index = findLayerIndex(layerName);
+bool LayerManager::layerByNameAndType(const QString& layerName,
+                                      const QString& layerType,
+                                      LayerDefinition& layer,
+                                      QString& error) const {
+    const int index = findLayerIndex(layerName, layerType);
     if (index < 0) {
-        error = QString("Unknown layer '%1'").arg(layerName);
+        error = QString("Unknown layer '%1' of type '%2'").arg(layerName, layerType);
         return false;
     }
 
@@ -147,8 +185,9 @@ QString LayerManager::serializeLayers() const {
     QString out;
 
     // Encode one human-readable row per layer.
-    for (const LayerDefinition& layer : m_layers) {
-        const QString activeMark = layer.name == m_activeLayer ? "active" : "inactive";
+    for (int i = 0; i < m_layers.size(); ++i) {
+        const LayerDefinition& layer = m_layers[i];
+        const QString activeMark = i == m_activeLayerIndex ? "active" : "inactive";
         out += QString("%1 {%2} %3 %4 %5 %6 %7\n")
                    .arg(layer.name, layer.type, layer.color.name(), layer.pattern)
                    .arg(layer.visible ? "visible" : "hidden")
