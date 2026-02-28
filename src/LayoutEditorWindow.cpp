@@ -116,8 +116,19 @@ public:
         update();
     }
 
+    void setLayers(const QVector<LayerDefinition>& layers) {
+        m_layers = layers;
+        validateSelection();
+        update();
+    }
+
+    void setActiveTool(const QString& toolName) {
+        m_activeTool = toolName;
+    }
+
 signals:
     void commandRequested(const QString& command);
+    void rectangleDeletionRequested(int rectangleIndex);
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -129,17 +140,32 @@ protected:
         drawGrid(painter);
 
         // Draw committed geometry first.
-        for (const DrawnRectangle& r : m_rectangles) {
-            drawRectangle(painter, r, false);
+        for (int i = 0; i < m_rectangles.size(); ++i) {
+            const DrawnRectangle& r = m_rectangles[i];
+            const LayerDefinition* layer = layerForRectangle(r);
+            if (!layer || !layer->visible) {
+                continue;
+            }
+            drawRectangle(painter, r, false, i == m_selectedIndex);
         }
 
         // Draw rubber-band preview on top.
         if (m_previewEnabled) {
-            drawRectangle(painter, m_preview, true);
+            drawRectangle(painter, m_preview, true, false);
         }
     }
 
     void keyPressEvent(QKeyEvent* event) override {
+        if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
+            && m_selectedIndex >= 0
+            && m_selectedIndex < m_rectangles.size()) {
+            emit rectangleDeletionRequested(m_selectedIndex);
+            m_selectedIndex = -1;
+            update();
+            event->accept();
+            return;
+        }
+
         const QString keySpec = keySpecFromEvent(event);
         if (!keySpec.isEmpty()) {
             emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec));
@@ -153,9 +179,18 @@ protected:
     void mousePressEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
             const QPointF world = screenToWorld(mouseEventPoint(event));
+            const qint64 worldX = static_cast<qint64>(world.x());
+            const qint64 worldY = static_cast<qint64>(world.y());
+
+            if (m_activeTool == "select") {
+                handleSelectionClick(worldX, worldY);
+                event->accept();
+                return;
+            }
+
             emit commandRequested(QString("canvas press %1 %2 1")
-                                      .arg(static_cast<qint64>(world.x()))
-                                      .arg(static_cast<qint64>(world.y())));
+                                      .arg(worldX)
+                                      .arg(worldY));
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -225,20 +260,101 @@ private:
     }
 
     // Shared draw helper for committed and preview rectangles.
-    void drawRectangle(QPainter& painter, const DrawnRectangle& r, bool preview) {
+    void drawRectangle(QPainter& painter, const DrawnRectangle& r, bool preview, bool selected) {
         QPointF p1 = worldToScreen(r.x1, r.y1);
         QPointF p2 = worldToScreen(r.x2, r.y2);
         QRectF rect = QRectF(p1, p2).normalized();
 
         QColor fillColor = r.color;
+        if (selected) {
+            fillColor = fillColor.lighter(130);
+        }
         fillColor.setAlpha(preview ? 90 : 140);
 
         QColor outlineColor = r.color;
         outlineColor.setAlpha(preview ? 180 : 220);
+        if (selected) {
+            outlineColor = QColor("#ffffff");
+            outlineColor.setAlpha(255);
+        }
 
-        painter.setPen(QPen(outlineColor, 1, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setPen(QPen(outlineColor, selected ? 2 : 1, preview ? Qt::DashLine : Qt::SolidLine));
         painter.setBrush(patternBrushFor(fillColor, r.pattern));
         painter.drawRect(rect);
+    }
+
+    bool rectangleContainsPoint(const DrawnRectangle& rectangle, qint64 x, qint64 y) const {
+        const qint64 minX = std::min(rectangle.x1, rectangle.x2);
+        const qint64 maxX = std::max(rectangle.x1, rectangle.x2);
+        const qint64 minY = std::min(rectangle.y1, rectangle.y2);
+        const qint64 maxY = std::max(rectangle.y1, rectangle.y2);
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
+    const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
+        for (const LayerDefinition& layer : m_layers) {
+            if (layer.name.compare(rectangle.layerName, Qt::CaseInsensitive) == 0) {
+                return &layer;
+            }
+        }
+        return nullptr;
+    }
+
+    bool isSelectableRectangleAt(const DrawnRectangle& rectangle, qint64 x, qint64 y) const {
+        const LayerDefinition* layer = layerForRectangle(rectangle);
+        if (!layer || !layer->visible || !layer->selectable) {
+            return false;
+        }
+        return rectangleContainsPoint(rectangle, x, y);
+    }
+
+    void handleSelectionClick(qint64 x, qint64 y) {
+        QVector<int> candidates;
+        for (int i = m_rectangles.size() - 1; i >= 0; --i) {
+            if (isSelectableRectangleAt(m_rectangles[i], x, y)) {
+                candidates.push_back(i);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            m_selectedIndex = -1;
+            m_lastSelectionCandidates.clear();
+            m_lastSelectionPoint = QPointF();
+            update();
+            return;
+        }
+
+        const QPointF selectionPoint(static_cast<double>(x), static_cast<double>(y));
+        const bool samePoint = m_hasSelectionPoint && m_lastSelectionPoint == selectionPoint;
+        const bool sameCandidates = samePoint && (candidates == m_lastSelectionCandidates);
+
+        if (!sameCandidates) {
+            m_selectedIndex = candidates.front();
+        } else {
+            int currentCandidate = candidates.indexOf(m_selectedIndex);
+            if (currentCandidate < 0) {
+                currentCandidate = 0;
+            }
+            m_selectedIndex = candidates[(currentCandidate + 1) % candidates.size()];
+        }
+
+        m_lastSelectionCandidates = candidates;
+        m_lastSelectionPoint = selectionPoint;
+        m_hasSelectionPoint = true;
+        update();
+    }
+
+    void validateSelection() {
+        if (m_selectedIndex < 0 || m_selectedIndex >= m_rectangles.size()) {
+            m_selectedIndex = -1;
+            return;
+        }
+
+        const DrawnRectangle& rectangle = m_rectangles[m_selectedIndex];
+        const LayerDefinition* layer = layerForRectangle(rectangle);
+        if (!layer || !layer->visible || !layer->selectable) {
+            m_selectedIndex = -1;
+        }
     }
 
     void drawGrid(QPainter& painter) {
@@ -276,7 +392,14 @@ private:
     }
 
     QVector<DrawnRectangle> m_rectangles;
+    QVector<LayerDefinition> m_layers;
     DrawnRectangle m_preview;
+    QString m_activeTool{"none"};
+
+    int m_selectedIndex{-1};
+    QVector<int> m_lastSelectionCandidates;
+    QPointF m_lastSelectionPoint;
+    bool m_hasSelectionPoint{false};
 
     bool m_previewEnabled{false};
     bool m_middlePanning{false};
@@ -350,6 +473,8 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_layerTable, &QTableWidget::currentCellChanged,
             this, [this](int currentRow, int, int previousRow, int) { onCurrentRowChanged(currentRow, previousRow); });
     connect(m_canvas, &LayoutCanvas::commandRequested, this, &LayoutEditorWindow::commandRequested);
+    connect(m_canvas, &LayoutCanvas::rectangleDeletionRequested,
+            this, &LayoutEditorWindow::onRectangleDeletionRequested);
 }
 
 QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
@@ -370,6 +495,7 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
 
     m_internalUpdate = false;
     updateActiveLayerHighlight();
+    m_canvas->setLayers(m_layers);
 }
 
 QBrush LayoutEditorWindow::makePatternBrush(const LayerDefinition& layer) const {
@@ -445,6 +571,7 @@ void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer)
         m_layerTable->item(index, 4)->setCheckState(layer.selectable ? Qt::Checked : Qt::Unchecked);
     }
     m_internalUpdate = false;
+    m_canvas->setLayers(m_layers);
 }
 
 void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName) {
@@ -475,6 +602,7 @@ void LayoutEditorWindow::onToolChanged(const QString& toolName) {
         status = status.left(idx).trimmed();
     }
     m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
+    m_canvas->setActiveTool(toolName);
 }
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
@@ -487,6 +615,15 @@ void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRect
 
 void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {
     m_rectangles.push_back(rectangle);
+    m_canvas->setRectangles(m_rectangles);
+}
+
+void LayoutEditorWindow::onRectangleDeletionRequested(int rectangleIndex) {
+    if (rectangleIndex < 0 || rectangleIndex >= m_rectangles.size()) {
+        return;
+    }
+
+    m_rectangles.removeAt(rectangleIndex);
     m_canvas->setRectangles(m_rectangles);
 }
 

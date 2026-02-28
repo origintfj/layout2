@@ -59,6 +59,7 @@ private slots:
     // Table interaction handlers.
     void onCellChanged(int row, int column);
     void onCurrentRowChanged(int currentRow, int previousRow);
+    void onRectangleDeletionRequested(int rectangleIndex);
 
 private:
     QBrush makePatternBrush(const LayerDefinition& layer) const;
