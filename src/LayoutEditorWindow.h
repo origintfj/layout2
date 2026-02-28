@@ -41,7 +41,7 @@ public slots:
     // Model-to-view refresh hooks.
     void setLayers(const QVector<LayerDefinition>& layers);
     void onLayerChanged(int index, const LayerDefinition& layer);
-    void onActiveLayerChanged(const QString& layerName);
+    void onActiveLayerChanged(const QString& layerName, const QString& layerType);
 
     // Tool and view state updates received from Tcl execution side.
     void onToolChanged(const QString& toolName);
@@ -73,6 +73,7 @@ private:
 
     QVector<LayerDefinition> m_layers;
     QString m_activeLayerName;
+    QString m_activeLayerType;
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
     // Committed rectangles currently shown on canvas.

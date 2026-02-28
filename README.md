@@ -18,9 +18,9 @@ Prototype Qt + Tcl desktop application for IC layout editing.
 ```tcl
 layer list
 layer load <layersFilePath>
-layer configure <LayerName> -visible 0|1
-layer configure <LayerName> -selectable 0|1
-layer active ?<LayerName>?
+layer configure <LayerName> <LayerType> -visible 0|1
+layer configure <LayerName> <LayerType> -selectable 0|1
+layer active ?<LayerName> <LayerType>?
 tool set <toolName>
 canvas press <x:int64> <y:int64> <button>
 canvas move <x:int64> <y:int64> <leftDown>
@@ -59,7 +59,7 @@ Metal3 drawing #2ca02c 0xAAAA
 
 ## Interaction behavior
 
-- Selecting a row in the layer palette emits `layer active <name>` to set active layer.
+- Selecting a row in the layer palette emits `layer active <name> <type>` to set active layer.
 - Key presses in the editor canvas emit `bindkey dispatch <keySpec>` and execute whatever command is configured for that key.
 - Key combinations are supported via portable key specs (for example `Shift+R`).
 - Console command echo supports glob-based filtering so noisy commands like `canvas move ...` can be hidden.

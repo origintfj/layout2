@@ -7,8 +7,8 @@
 layer load example_layers.txt
 
 # Example customization:
-# layer configure Metal3 -visible 0
-# layer configure Metal2 -selectable 0
+# layer configure Metal3 drawing -visible 0
+# layer configure Metal2 drawing -selectable 0
 # tool set rect
 source bindkeys.tcl
 source transcript_filters.tcl

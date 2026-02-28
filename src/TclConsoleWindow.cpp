@@ -371,37 +371,46 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
 
     if (subCommand == "active") {
         if (objc == 2) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj(m_layerManager.activeLayer().toUtf8().constData(), -1));
+            const QString activeName = m_layerManager.activeLayerName();
+            const QString activeType = m_layerManager.activeLayerType();
+            Tcl_Obj* pair = Tcl_NewListObj(0, nullptr);
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(activeName.toUtf8().constData(), -1));
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(activeType.toUtf8().constData(), -1));
+            Tcl_SetObjResult(interp, pair);
             return TCL_OK;
         }
-        if (objc != 3) {
-            Tcl_SetResult(interp, const_cast<char*>("usage: layer active ?name?"), TCL_STATIC);
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: layer active ?name type?"), TCL_STATIC);
             return TCL_ERROR;
         }
 
         QString error;
         const QString layerName = QString::fromUtf8(Tcl_GetString(objv[2]));
-        if (!m_layerManager.setActiveLayer(layerName, error)) {
+        const QString layerType = QString::fromUtf8(Tcl_GetString(objv[3]));
+        if (!m_layerManager.setActiveLayer(layerName, layerType, error)) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
             return TCL_ERROR;
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj(
-            QString("active layer: %1").arg(m_layerManager.activeLayer()).toUtf8().constData(), -1));
+            QString("active layer: %1 (%2)").arg(m_layerManager.activeLayerName(), m_layerManager.activeLayerType())
+                .toUtf8()
+                .constData(), -1));
         return TCL_OK;
     }
 
     if (subCommand == "configure") {
-        if (objc != 5) {
+        if (objc != 6) {
             Tcl_SetResult(interp,
-                          const_cast<char*>("usage: layer configure <name> <-visible|-selectable> <0|1>"),
+                          const_cast<char*>("usage: layer configure <name> <type> <-visible|-selectable> <0|1>"),
                           TCL_STATIC);
             return TCL_ERROR;
         }
 
         const QString layerName = QString::fromUtf8(Tcl_GetString(objv[2]));
-        const QString option = QString::fromUtf8(Tcl_GetString(objv[3]));
-        const QString valueRaw = QString::fromUtf8(Tcl_GetString(objv[4]));
+        const QString layerType = QString::fromUtf8(Tcl_GetString(objv[3]));
+        const QString option = QString::fromUtf8(Tcl_GetString(objv[4]));
+        const QString valueRaw = QString::fromUtf8(Tcl_GetString(objv[5]));
 
         bool ok = false;
         const int numeric = valueRaw.toInt(&ok);
@@ -411,13 +420,13 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
         }
 
         QString error;
-        if (!m_layerManager.configureLayer(layerName, option, numeric == 1, error)) {
+        if (!m_layerManager.configureLayer(layerName, layerType, option, numeric == 1, error)) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
             return TCL_ERROR;
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj(
-            QString("layer %1 updated: %2=%3").arg(layerName, option).arg(numeric).toUtf8().constData(), -1));
+            QString("layer %1 (%2) updated: %3=%4").arg(layerName, layerType, option).arg(numeric).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -459,12 +468,13 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         }
 
         // Rectangle tool starts preview only for left button and valid active layer.
-        if (button == 1 && m_activeTool == "rect" && !m_layerManager.activeLayer().isEmpty()) {
+        if (button == 1 && m_activeTool == "rect" && !m_layerManager.activeLayerName().isEmpty()) {
             m_rectInProgress = true;
 
             LayerDefinition active;
             QString error;
-            if (!m_layerManager.layerByName(m_layerManager.activeLayer(), active, error)) {
+            if (!m_layerManager.activeLayerDefinition(active)) {
+                error = "No active layer";
                 Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
                 return TCL_ERROR;
             }

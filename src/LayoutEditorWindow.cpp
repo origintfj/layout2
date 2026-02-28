@@ -487,6 +487,7 @@ void LayoutEditorWindow::setLayers(const QVector<LayerDefinition>& layers) {
     m_internalUpdate = true;
     m_layers = layers;
     m_activeLayerName = layers.isEmpty() ? QString() : layers[0].name;
+    m_activeLayerType = layers.isEmpty() ? QString() : layers[0].type;
     m_layerTable->setRowCount(layers.size());
 
     for (int row = 0; row < layers.size(); ++row) {
@@ -509,7 +510,8 @@ void LayoutEditorWindow::updateActiveLayerHighlight() {
     m_internalUpdate = true;
 
     for (int row = 0; row < m_layers.size(); ++row) {
-        const bool isActive = m_layers[row].name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0;
+        const bool isActive = m_layers[row].name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0
+                              && m_layers[row].type.compare(m_activeLayerType, Qt::CaseInsensitive) == 0;
         for (int column = 1; column < m_layerTable->columnCount(); ++column) {
             if (auto* item = m_layerTable->item(row, column)) {
                 item->setBackground(isActive ? QBrush(highlight) : QBrush(Qt::NoBrush));
@@ -574,18 +576,20 @@ void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer)
     m_canvas->setLayers(m_layers);
 }
 
-void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName) {
+void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName, const QString& layerType) {
     // Update status label while preserving the existing tool text suffix.
     QString status = m_statusLabel->text();
     const int toolIdx = status.indexOf("| Tool:");
     const QString toolPart = toolIdx >= 0 ? status.mid(toolIdx + 2) : "Tool: <none>";
-    m_statusLabel->setText(QString("Active layer: %1 | %2").arg(layerName, toolPart));
+    m_statusLabel->setText(QString("Active layer: %1 (%2) | %3").arg(layerName, layerType, toolPart));
 
     // Highlight corresponding row (without retriggering command emission).
     m_activeLayerName = layerName;
+    m_activeLayerType = layerType;
     m_internalUpdate = true;
     for (int row = 0; row < m_layers.size(); ++row) {
-        if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0) {
+        if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0
+            && m_layers[row].type.compare(layerType, Qt::CaseInsensitive) == 0) {
             m_layerTable->setCurrentCell(row, 1);
             break;
         }
@@ -658,8 +662,8 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
     m_internalUpdate = false;
 
     const QString option = column == 3 ? "-visible" : "-selectable";
-    emit commandRequested(QString("layer configure %1 %2 %3")
-                              .arg(current.name, option)
+    emit commandRequested(QString("layer configure {%1} {%2} %3 %4")
+                              .arg(current.name, current.type, option)
                               .arg(requestedValue ? 1 : 0));
 }
 
@@ -669,7 +673,8 @@ void LayoutEditorWindow::onCurrentRowChanged(int currentRow, int) {
     }
 
     // Row selection sets active layer via Tcl command.
-    emit commandRequested(QString("layer active %1").arg(m_layers[currentRow].name));
+    emit commandRequested(QString("layer active {%1} {%2}")
+                              .arg(m_layers[currentRow].name, m_layers[currentRow].type));
 }
 
 #include "LayoutEditorWindow.moc"
