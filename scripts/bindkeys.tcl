@@ -10,3 +10,4 @@
 
 bindkey set R {tool set rect}
 bindkey set Esc {tool set none}
+bindkey set Shift+R {tool set rect}

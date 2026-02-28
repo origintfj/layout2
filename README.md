@@ -55,6 +55,7 @@ Metal3 drawing #2ca02c 0xAAAA
 
 - Selecting a row in the layer palette emits `layer active <name>` to set active layer.
 - Key presses in the editor canvas emit `bindkey dispatch <keySpec>` and execute whatever command is configured for that key.
+- Key combinations are supported via portable key specs (for example `Shift+R`).
 - Rectangle draw flow is Tcl-driven:
   - `canvas press` starts a rectangle on active layer
   - `canvas move` updates rubber-band preview
@@ -73,7 +74,7 @@ layer load example_layers.txt
 source bindkeys.tcl
 ```
 
-This initializes the layer palette and loads default key bindings. `scripts/bindkeys.tcl` is where key-to-command mappings are defined.
+This initializes the layer palette and loads default key bindings. `scripts/bindkeys.tcl` is where key-to-command mappings are defined (including combinations like `Shift+R`).
 
 ## Ubuntu dependencies
 
