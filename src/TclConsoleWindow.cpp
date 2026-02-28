@@ -71,8 +71,6 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     connect(&m_layerManager, &LayerManager::activeLayerChanged,
             m_editorWindow, &LayoutEditorWindow::onActiveLayerChanged);
 
-    m_editorWindow->show();
-
     // Startup script bootstraps initial palette/tool config.
     appendTranscript("Interpreter ready. Loading init.tcl...");
     executeCommand("source init.tcl");
