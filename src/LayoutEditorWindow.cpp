@@ -528,7 +528,7 @@ void LayoutEditorWindow::applyLayerToRow(int row, const LayerDefinition& layer) 
     swatch->setSizeHint(QSize(24, 24));
 
     QPixmap swatchPixmap(16, 16);
-    swatchPixmap.fill(Qt::transparent);
+    swatchPixmap.fill(QColor("#000000"));
     QPainter swatchPainter(&swatchPixmap);
     swatchPainter.fillRect(swatchPixmap.rect(), makePatternBrush(layer));
     swatchPainter.setPen(QColor("#1a1a1a"));
