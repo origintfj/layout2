@@ -43,8 +43,10 @@ transcript filter clear
 Layer files are plain text with one layer per line:
 
 ```text
-<name> <type> <#RRGGBB> <0xPATTERN>
+<name> <type> <#RRGGBB> <0xPATTERN64>
 ```
+
+`PATTERN64` is interpreted as a 64-bit bitmap (8x8 stipple tile), where each set bit draws a darker point over the layer color.
 
 Example (`data/example_layers.txt`):
 

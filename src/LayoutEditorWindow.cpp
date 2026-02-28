@@ -41,7 +41,7 @@ QPointF wheelEventPoint(const QWheelEvent* event) {
 
 QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     bool ok = false;
-    const quint16 patternValue = static_cast<quint16>(pattern.toUInt(&ok, 0) & 0xFFFFu);
+    const quint64 patternValue = static_cast<quint64>(pattern.toULongLong(&ok, 0));
     if (!ok) {
         return QBrush(baseColor, Qt::SolidPattern);
     }
@@ -53,8 +53,8 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
 
     for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
-            const int bitIndex = ((y % 4) * 4) + (x % 4);
-            if ((patternValue >> bitIndex) & 0x1u) {
+            const int bitIndex = (y * 8) + x;
+            if ((patternValue >> bitIndex) & 0x1ULL) {
                 painter.drawPoint(x, y);
             }
         }
