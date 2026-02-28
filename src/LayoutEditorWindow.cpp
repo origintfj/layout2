@@ -47,9 +47,9 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     }
 
     QPixmap pixmap(8, 8);
-    pixmap.fill(baseColor);
+    pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
-    painter.setPen(QColor(0, 0, 0, 120));
+    painter.setPen(baseColor);
 
     for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {

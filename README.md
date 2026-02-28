@@ -46,7 +46,7 @@ Layer files are plain text with one layer per line:
 <name> <type> <#RRGGBB> <0xPATTERN64>
 ```
 
-`PATTERN64` is interpreted as a 64-bit bitmap (8x8 stipple tile), where each set bit draws a darker point over the layer color.
+`PATTERN64` is interpreted as a 64-bit bitmap (8x8 stipple tile): set bits draw the layer color, and clear bits remain transparent.
 
 Example (`data/example_layers.txt`):
 
