@@ -11,3 +11,4 @@ layer load example_layers.txt
 # layer configure Metal2 -selectable 0
 # tool set rect
 source bindkeys.tcl
+source transcript_filters.tcl

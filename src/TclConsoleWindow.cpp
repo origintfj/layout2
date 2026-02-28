@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -32,6 +33,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     Tcl_CreateObjCommand(m_interp, "canvas", &TclConsoleWindow::CanvasCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "view", &TclConsoleWindow::ViewCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "bindkey", &TclConsoleWindow::BindKeyCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "transcript", &TclConsoleWindow::TranscriptCommandBridge, this, nullptr);
 
     // Manual command entry from console input line.
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
@@ -73,19 +75,35 @@ void TclConsoleWindow::appendTranscript(const QString& line) {
 }
 
 void TclConsoleWindow::executeCommand(const QString& command) {
-    appendTranscript(QString("> %1").arg(command));
+    const bool suppressEcho = shouldSuppressTranscriptCommand(command);
+    if (!suppressEcho) {
+        appendTranscript(QString("> %1").arg(command));
+    }
 
     const QByteArray utf8 = command.toUtf8();
     const int rc = Tcl_Eval(m_interp, utf8.constData());
     const QString result = QString::fromUtf8(Tcl_GetStringResult(m_interp));
 
-    if (!result.isEmpty()) {
+    if (!result.isEmpty() && (!suppressEcho || rc != TCL_OK)) {
         appendTranscript(result);
     }
 
     if (rc != TCL_OK) {
         appendTranscript(QString("ERROR (%1)").arg(rc));
     }
+}
+
+bool TclConsoleWindow::shouldSuppressTranscriptCommand(const QString& command) const {
+    for (const QString& pattern : m_transcriptFilters) {
+        const QRegularExpression regex(
+            QRegularExpression::wildcardToRegularExpression(pattern),
+            QRegularExpression::CaseInsensitiveOption);
+        if (regex.match(command).hasMatch()) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 int TclConsoleWindow::LayerCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
@@ -108,6 +126,10 @@ int TclConsoleWindow::BindKeyCommandBridge(ClientData clientData, Tcl_Interp* in
     return static_cast<TclConsoleWindow*>(clientData)->handleBindKeyCommand(interp, objc, objv);
 }
 
+int TclConsoleWindow::TranscriptCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleTranscriptCommand(interp, objc, objv);
+}
+
 bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName) {
     Tcl_WideInt raw = 0;
     if (Tcl_GetWideIntFromObj(interp, obj, &raw) != TCL_OK) {
@@ -126,6 +148,74 @@ bool TclConsoleWindow::parseDouble(Tcl_Interp* interp, Tcl_Obj* obj, double& val
     }
 
     return true;
+}
+
+int TclConsoleWindow::handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc < 3 || QString::fromUtf8(Tcl_GetString(objv[1])) != "filter") {
+        Tcl_SetResult(interp, const_cast<char*>("usage: transcript filter <add|remove|list|clear> ..."), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[2]));
+
+    if (subCommand == "add") {
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: transcript filter add <globPattern>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString pattern = QString::fromUtf8(Tcl_GetString(objv[3]));
+        if (pattern.isEmpty()) {
+            Tcl_SetResult(interp, const_cast<char*>("pattern must not be empty"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (!m_transcriptFilters.contains(pattern, Qt::CaseInsensitive)) {
+            m_transcriptFilters.push_back(pattern);
+        }
+
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("added transcript filter: %1").arg(pattern).toUtf8().constData(), -1));
+        return TCL_OK;
+    }
+
+    if (subCommand == "remove") {
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: transcript filter remove <globPattern>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString pattern = QString::fromUtf8(Tcl_GetString(objv[3]));
+        const int removed = m_transcriptFilters.removeAll(pattern);
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(removed));
+        return TCL_OK;
+    }
+
+    if (subCommand == "list") {
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: transcript filter list"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        Tcl_Obj* list = Tcl_NewListObj(0, nullptr);
+        for (const QString& pattern : m_transcriptFilters) {
+            Tcl_ListObjAppendElement(interp, list, Tcl_NewStringObj(pattern.toUtf8().constData(), -1));
+        }
+        Tcl_SetObjResult(interp, list);
+        return TCL_OK;
+    }
+
+    if (subCommand == "clear") {
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: transcript filter clear"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        m_transcriptFilters.clear();
+        return TCL_OK;
+    }
+
+    Tcl_SetResult(interp, const_cast<char*>("unknown transcript filter subcommand"), TCL_STATIC);
+    return TCL_ERROR;
 }
 
 int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {

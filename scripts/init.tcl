@@ -5,3 +5,4 @@
 # scripts/init.example.tcl as a template.
 layer load example_layers.txt
 source bindkeys.tcl
+source transcript_filters.tcl

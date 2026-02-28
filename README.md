@@ -32,6 +32,10 @@ bindkey set <keySpec> <tclCommand>
 bindkey dispatch <keySpec>
 bindkey list
 bindkey clear ?<keySpec>?
+transcript filter add <globPattern>
+transcript filter remove <globPattern>
+transcript filter list
+transcript filter clear
 ```
 
 ## Layers file format
@@ -56,6 +60,7 @@ Metal3 drawing #2ca02c 0xAAAA
 - Selecting a row in the layer palette emits `layer active <name>` to set active layer.
 - Key presses in the editor canvas emit `bindkey dispatch <keySpec>` and execute whatever command is configured for that key.
 - Key combinations are supported via portable key specs (for example `Shift+R`).
+- Console command echo supports glob-based filtering so noisy commands like `canvas move ...` can be hidden.
 - Rectangle draw flow is Tcl-driven:
   - `canvas press` starts a rectangle on active layer
   - `canvas move` updates rubber-band preview
@@ -72,9 +77,10 @@ An editable example script is provided at `scripts/init.example.tcl`, and the de
 ```tcl
 layer load example_layers.txt
 source bindkeys.tcl
+source transcript_filters.tcl
 ```
 
-This initializes the layer palette and loads default key bindings. `scripts/bindkeys.tcl` is where key-to-command mappings are defined (including combinations like `Shift+R`).
+This initializes the layer palette, loads default key bindings, and applies transcript filters. `scripts/bindkeys.tcl` defines key-to-command mappings (including combinations like `Shift+R`) and `scripts/transcript_filters.tcl` defines command-echo suppression rules.
 
 ## Ubuntu dependencies
 
