@@ -6,6 +6,7 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
@@ -60,6 +61,26 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     }
 
     return QBrush(pixmap);
+}
+
+bool isModifierOnlyKey(int key) {
+    return key == Qt::Key_Shift
+           || key == Qt::Key_Control
+           || key == Qt::Key_Alt
+           || key == Qt::Key_Meta
+           || key == Qt::Key_AltGr;
+}
+
+QString keySpecFromEvent(const QKeyEvent* event) {
+    const int key = event->key();
+    if (key == Qt::Key_unknown || isModifierOnlyKey(key)) {
+        return QString();
+    }
+
+    Qt::KeyboardModifiers modifiers = event->modifiers();
+
+    const QKeySequence sequence(modifiers | key);
+    return sequence.toString(QKeySequence::PortableText);
 }
 } // namespace
 
@@ -119,15 +140,9 @@ protected:
     }
 
     void keyPressEvent(QKeyEvent* event) override {
-        // Keyboard shortcuts are also routed through Tcl commands.
-        if (event->key() == Qt::Key_R) {
-            emit commandRequested("tool set rect");
-            event->accept();
-            return;
-        }
-
-        if (event->key() == Qt::Key_Escape) {
-            emit commandRequested("tool set none");
+        const QString keySpec = keySpecFromEvent(event);
+        if (!keySpec.isEmpty()) {
+            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec));
             event->accept();
             return;
         }

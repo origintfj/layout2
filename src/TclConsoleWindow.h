@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QHash>
 #include <QMainWindow>
+#include <QStringList>
 #include <tcl.h>
 
 class QLineEdit;
@@ -32,12 +34,16 @@ private:
     static int ToolCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     static int CanvasCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     static int ViewCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    static int BindKeyCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    static int TranscriptCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
 
     // Per-command-family handlers.
     int handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    int handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    int handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
 
     // Common argument parsing helpers.
     bool parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName);
@@ -45,6 +51,7 @@ private:
 
     // Console transcript helper.
     void appendTranscript(const QString& line);
+    bool shouldSuppressTranscriptCommand(const QString& command) const;
 
     QPlainTextEdit* m_output;
     QLineEdit* m_input;
@@ -66,4 +73,10 @@ private:
     double m_panX{0.0};
     double m_panY{0.0};
     double m_gridSize{40.0};
+
+    // Key binding table used by bindkey set/dispatch commands.
+    QHash<QString, QString> m_keyBindings;
+
+    // Glob patterns for commands that should not be echoed to the transcript.
+    QStringList m_transcriptFilters;
 };
