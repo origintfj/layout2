@@ -28,6 +28,10 @@ canvas release <x:int64> <y:int64> <button>
 view pan <dx> <dy>
 view zoom <wheelDelta> <anchorX> <anchorY>
 view grid ?<size>?
+bindkey set <keySpec> <tclCommand>
+bindkey dispatch <keySpec>
+bindkey list
+bindkey clear ?<keySpec>?
 ```
 
 ## Layers file format
@@ -50,7 +54,7 @@ Metal3 drawing #2ca02c 0xAAAA
 ## Interaction behavior
 
 - Selecting a row in the layer palette emits `layer active <name>` to set active layer.
-- Pressing `r` in the editor canvas emits `tool set rect`.
+- Key presses in the editor canvas emit `bindkey dispatch <keySpec>` and execute whatever command is configured for that key.
 - Rectangle draw flow is Tcl-driven:
   - `canvas press` starts a rectangle on active layer
   - `canvas move` updates rubber-band preview
@@ -66,9 +70,10 @@ An editable example script is provided at `scripts/init.example.tcl`, and the de
 
 ```tcl
 layer load example_layers.txt
+source bindkeys.tcl
 ```
 
-This initializes the layer palette shown in the editor pane.
+This initializes the layer palette and loads default key bindings. `scripts/bindkeys.tcl` is where key-to-command mappings are defined.
 
 ## Ubuntu dependencies
 

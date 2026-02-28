@@ -42,3 +42,4 @@ target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${TCL_LIBRARY})
 # Copy runtime data/scripts into build directory for startup loading.
 configure_file(data/example_layers.txt ${CMAKE_CURRENT_BINARY_DIR}/example_layers.txt COPYONLY)
 configure_file(scripts/init.tcl ${CMAKE_CURRENT_BINARY_DIR}/init.tcl COPYONLY)
+configure_file(scripts/bindkeys.tcl ${CMAKE_CURRENT_BINARY_DIR}/bindkeys.tcl COPYONLY)

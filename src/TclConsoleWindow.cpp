@@ -31,6 +31,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     Tcl_CreateObjCommand(m_interp, "tool", &TclConsoleWindow::ToolCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "canvas", &TclConsoleWindow::CanvasCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "view", &TclConsoleWindow::ViewCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "bindkey", &TclConsoleWindow::BindKeyCommandBridge, this, nullptr);
 
     // Manual command entry from console input line.
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
@@ -103,6 +104,10 @@ int TclConsoleWindow::ViewCommandBridge(ClientData clientData, Tcl_Interp* inter
     return static_cast<TclConsoleWindow*>(clientData)->handleViewCommand(interp, objc, objv);
 }
 
+int TclConsoleWindow::BindKeyCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleBindKeyCommand(interp, objc, objv);
+}
+
 bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName) {
     Tcl_WideInt raw = 0;
     if (Tcl_GetWideIntFromObj(interp, obj, &raw) != TCL_OK) {
@@ -121,6 +126,79 @@ bool TclConsoleWindow::parseDouble(Tcl_Interp* interp, Tcl_Obj* obj, double& val
     }
 
     return true;
+}
+
+int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    if (objc < 2) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: bindkey <set|dispatch|list|clear> ..."), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
+
+    if (subCommand == "set") {
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: bindkey set <keySpec> <tclCommand>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString keySpec = QString::fromUtf8(Tcl_GetString(objv[2]));
+        const QString command = QString::fromUtf8(Tcl_GetString(objv[3]));
+        if (keySpec.isEmpty()) {
+            Tcl_SetResult(interp, const_cast<char*>("keySpec must not be empty"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        m_keyBindings.insert(keySpec, command);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("bound %1").arg(keySpec).toUtf8().constData(), -1));
+        return TCL_OK;
+    }
+
+    if (subCommand == "dispatch") {
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: bindkey dispatch <keySpec>"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString keySpec = QString::fromUtf8(Tcl_GetString(objv[2]));
+        if (!m_keyBindings.contains(keySpec)) {
+            Tcl_ResetResult(interp);
+            return TCL_OK;
+        }
+
+        const QByteArray utf8 = m_keyBindings.value(keySpec).toUtf8();
+        return Tcl_Eval(interp, utf8.constData());
+    }
+
+    if (subCommand == "list") {
+        Tcl_Obj* list = Tcl_NewListObj(0, nullptr);
+        for (auto it = m_keyBindings.constBegin(); it != m_keyBindings.constEnd(); ++it) {
+            Tcl_Obj* pair = Tcl_NewListObj(0, nullptr);
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(it.key().toUtf8().constData(), -1));
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(it.value().toUtf8().constData(), -1));
+            Tcl_ListObjAppendElement(interp, list, pair);
+        }
+        Tcl_SetObjResult(interp, list);
+        return TCL_OK;
+    }
+
+    if (subCommand == "clear") {
+        if (objc == 2) {
+            m_keyBindings.clear();
+            return TCL_OK;
+        }
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: bindkey clear ?keySpec?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString keySpec = QString::fromUtf8(Tcl_GetString(objv[2]));
+        m_keyBindings.remove(keySpec);
+        return TCL_OK;
+    }
+
+    Tcl_SetResult(interp, const_cast<char*>("unknown bindkey subcommand"), TCL_STATIC);
+    return TCL_ERROR;
 }
 
 int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
