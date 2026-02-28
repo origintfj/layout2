@@ -27,6 +27,7 @@ canvas move <x:int64> <y:int64> <leftDown>
 canvas release <x:int64> <y:int64> <button>
 view pan <dx> <dy>
 view zoom <wheelDelta> <anchorX> <anchorY>
+view grid ?<size>?
 ```
 
 ## Layers file format
@@ -56,6 +57,7 @@ Metal3 drawing #2ca02c 0xAAAA
   - `canvas release` commits the rectangle
 - Coordinates are carried as signed 64-bit integers (`int64`) in Tcl canvas commands.
 - Mouse wheel emits `view zoom ...` and middle-drag emits `view pan ...`; Tcl handlers apply the view transform.
+- The canvas grid is anchored to world coordinates (it pans/zooms with the view), and `view grid <size>` updates the grid spacing in world units (`view grid` queries current size).
 
 ## Startup initialization
 

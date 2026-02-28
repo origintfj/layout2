@@ -65,4 +65,5 @@ private:
     double m_zoom{1.0};
     double m_panX{0.0};
     double m_panY{0.0};
+    double m_gridSize{40.0};
 };

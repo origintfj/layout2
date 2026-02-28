@@ -1,6 +1,7 @@
 #include "LayoutEditorWindow.h"
 
 #include <QAbstractItemView>
+#include <algorithm>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -16,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QtGlobal>
+#include <cmath>
 
 namespace {
 // Qt5/Qt6 compatibility helper for mouse event coordinates.
@@ -85,10 +87,11 @@ public:
         update();
     }
 
-    void setView(double zoom, double panX, double panY) {
+    void setView(double zoom, double panX, double panY, double gridSize) {
         m_zoom = zoom;
         m_panX = panX;
         m_panY = panY;
+        m_gridSize = gridSize;
         update();
     }
 
@@ -99,15 +102,10 @@ protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
 
-        // Background and simple grid for orientation.
+        // Background and world-anchored grid for orientation.
         painter.fillRect(rect(), QColor("#101820"));
         painter.setPen(QPen(QColor("#2a2a2a"), 1));
-        for (int x = 0; x < width(); x += 40) {
-            painter.drawLine(x, 0, x, height());
-        }
-        for (int y = 0; y < height(); y += 40) {
-            painter.drawLine(0, y, width(), y);
-        }
+        drawGrid(painter);
 
         // Draw committed geometry first.
         for (const DrawnRectangle& r : m_rectangles) {
@@ -228,6 +226,40 @@ private:
         painter.drawRect(rect);
     }
 
+    void drawGrid(QPainter& painter) {
+        if (m_gridSize <= 0.0 || m_zoom <= 0.0) {
+            return;
+        }
+
+        // Prevent very dense grid rendering when zoomed out by adaptively
+        // increasing the displayed step while keeping it world-anchored.
+        const double minimumPixelSpacing = 10.0;
+        const double basePixelSpacing = m_gridSize * m_zoom;
+        const double multiplier = std::max(1.0, std::ceil(minimumPixelSpacing / basePixelSpacing));
+        const double visibleStep = m_gridSize * multiplier;
+
+        const QPointF topLeftWorld = screenToWorld(QPointF(0.0, 0.0));
+        const QPointF bottomRightWorld = screenToWorld(QPointF(width(), height()));
+
+        const double worldMinX = std::min(topLeftWorld.x(), bottomRightWorld.x());
+        const double worldMaxX = std::max(topLeftWorld.x(), bottomRightWorld.x());
+        const double worldMinY = std::min(topLeftWorld.y(), bottomRightWorld.y());
+        const double worldMaxY = std::max(topLeftWorld.y(), bottomRightWorld.y());
+
+        const double firstGridX = std::floor(worldMinX / visibleStep) * visibleStep;
+        const double firstGridY = std::floor(worldMinY / visibleStep) * visibleStep;
+
+        for (double worldX = firstGridX; worldX <= worldMaxX; worldX += visibleStep) {
+            const double screenX = (worldX * m_zoom) + m_panX;
+            painter.drawLine(QPointF(screenX, 0.0), QPointF(screenX, height()));
+        }
+
+        for (double worldY = firstGridY; worldY <= worldMaxY; worldY += visibleStep) {
+            const double screenY = (worldY * m_zoom) + m_panY;
+            painter.drawLine(QPointF(0.0, screenY), QPointF(width(), screenY));
+        }
+    }
+
     QVector<DrawnRectangle> m_rectangles;
     DrawnRectangle m_preview;
 
@@ -238,6 +270,7 @@ private:
     double m_zoom{1.0};
     double m_panX{0.0};
     double m_panY{0.0};
+    double m_gridSize{40.0};
 };
 
 LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
@@ -429,8 +462,8 @@ void LayoutEditorWindow::onToolChanged(const QString& toolName) {
     m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
 }
 
-void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY) {
-    m_canvas->setView(zoom, panX, panY);
+void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
+    m_canvas->setView(zoom, panX, panY, gridSize);
 }
 
 void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle) {

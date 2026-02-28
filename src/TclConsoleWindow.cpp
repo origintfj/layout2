@@ -308,7 +308,7 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
 
 int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
     if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: view <zoom|pan> ..."), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: view <zoom|pan|grid> ..."), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -328,7 +328,7 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 
         m_panX += dx;
         m_panY += dy;
-        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY);
+        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
@@ -365,7 +365,34 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
         m_panX = anchorX - (worldX * m_zoom);
         m_panY = anchorY - (worldY * m_zoom);
 
-        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY);
+        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+        return TCL_OK;
+    }
+
+    if (sub == "grid") {
+        if (objc == 2) {
+            Tcl_SetObjResult(interp, Tcl_NewDoubleObj(m_gridSize));
+            return TCL_OK;
+        }
+
+        if (objc != 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: view grid ?<size>?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        double requestedGridSize = 0.0;
+        if (!parseDouble(interp, objv[2], requestedGridSize, "size")) {
+            return TCL_ERROR;
+        }
+
+        if (requestedGridSize <= 0.0) {
+            Tcl_SetResult(interp, const_cast<char*>("grid size must be > 0"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        m_gridSize = requestedGridSize;
+        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }

@@ -45,7 +45,7 @@ public slots:
 
     // Tool and view state updates received from Tcl execution side.
     void onToolChanged(const QString& toolName);
-    void onViewChanged(double zoom, double panX, double panY);
+    void onViewChanged(double zoom, double panX, double panY, double gridSize);
 
     // Rectangle preview/commit updates received from Tcl execution side.
     void onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle);
