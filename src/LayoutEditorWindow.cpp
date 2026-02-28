@@ -432,7 +432,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     leftLayout->setContentsMargins(6, 6, 6, 6);
 
     m_layerTable->setColumnCount(5);
-    m_layerTable->setHorizontalHeaderLabels({"Style", "Layer", "Type", "Visible", "Selectable"});
+    m_layerTable->setHorizontalHeaderLabels({"", "Layer", "Type", "V", "S"});
     m_layerTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_layerTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_layerTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
