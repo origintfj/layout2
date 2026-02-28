@@ -63,13 +63,23 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     return QBrush(pixmap);
 }
 
+bool isModifierOnlyKey(int key) {
+    return key == Qt::Key_Shift
+           || key == Qt::Key_Control
+           || key == Qt::Key_Alt
+           || key == Qt::Key_Meta
+           || key == Qt::Key_AltGr;
+}
+
 QString keySpecFromEvent(const QKeyEvent* event) {
     const int key = event->key();
-    if (key == Qt::Key_unknown) {
+    if (key == Qt::Key_unknown || isModifierOnlyKey(key)) {
         return QString();
     }
 
-    const QKeySequence sequence(event->modifiers() | key);
+    Qt::KeyboardModifiers modifiers = event->modifiers();
+
+    const QKeySequence sequence(modifiers | key);
     return sequence.toString(QKeySequence::PortableText);
 }
 } // namespace
