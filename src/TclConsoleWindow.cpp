@@ -153,9 +153,12 @@ void TclConsoleWindow::navigateHistory(const int direction) {
     m_input->setCursorPosition(m_input->text().size());
 }
 
-void TclConsoleWindow::executeCommand(const QString& command) {
+int TclConsoleWindow::evaluateCommand(const QString& command,
+                                      const bool echoCommand,
+                                      const bool echoResult,
+                                      const bool echoErrorLine) {
     const bool suppressEcho = shouldSuppressTranscriptCommand(command);
-    if (!suppressEcho) {
+    if (echoCommand && !suppressEcho) {
         appendTranscript(QString("> %1").arg(command));
     }
 
@@ -163,13 +166,19 @@ void TclConsoleWindow::executeCommand(const QString& command) {
     const int rc = Tcl_Eval(m_interp, utf8.constData());
     const QString result = QString::fromUtf8(Tcl_GetStringResult(m_interp));
 
-    if (!result.isEmpty() && (!suppressEcho || rc != TCL_OK)) {
+    if (echoResult && !result.isEmpty() && (!suppressEcho || rc != TCL_OK)) {
         appendTranscript(result);
     }
 
-    if (rc != TCL_OK) {
+    if (echoErrorLine && rc != TCL_OK) {
         appendTranscript(QString("ERROR (%1)").arg(rc));
     }
+
+    return rc;
+}
+
+void TclConsoleWindow::executeCommand(const QString& command) {
+    (void)evaluateCommand(command, true, true, true);
 }
 
 bool TclConsoleWindow::shouldSuppressTranscriptCommand(const QString& command) const {
@@ -374,8 +383,8 @@ int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj
             return TCL_OK;
         }
 
-        const QByteArray utf8 = m_keyBindings.value(keySpec).toUtf8();
-        return Tcl_Eval(interp, utf8.constData());
+        const QString command = m_keyBindings.value(keySpec);
+        return evaluateCommand(command, true, true, false);
     }
 
     if (subCommand == "list") {

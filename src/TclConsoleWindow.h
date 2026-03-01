@@ -58,6 +58,7 @@ private:
     // Console transcript helper.
     void appendTranscript(const QString& line);
     bool shouldSuppressTranscriptCommand(const QString& command) const;
+    int evaluateCommand(const QString& command, bool echoCommand, bool echoResult, bool echoErrorLine);
     void pushHistoryCommand(const QString& command);
     void navigateHistory(int direction);
 
