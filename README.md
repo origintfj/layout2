@@ -7,48 +7,136 @@ Prototype Qt + Tcl desktop application for IC layout editing.
 - **Main window**: Tcl interpreter console (`TclConsoleWindow`)
 - **Child window**: Layout editor (`LayoutEditorWindow`) with:
   - Layer list on the left
-  - Editing canvas placeholder on the right
+  - Editing canvas on the right
 - **Command flow**:
   - GUI interactions emit Tcl commands
   - Tcl command execution updates shared layer state (`LayerManager`)
   - UI refresh is driven by command results
 
-## Supported Tcl commands
+## Tcl command reference
+
+### `layer` command family
 
 ```tcl
 layer list
 layer load <layersFilePath>
+layer active
+layer active <LayerName> <LayerType>
 layer configure <LayerName> <LayerType> -visible 0|1
 layer configure <LayerName> <LayerType> -selectable 0|1
-layer active ?<LayerName> <LayerType>?
+```
+
+- `layer list`
+  - Returns one line per layer using this format:
+    ```text
+    <name> {<type>} <name_id>/<type_id> <#RRGGBB> <pattern> <visible|hidden> <selectable|locked> <active|inactive>
+    ```
+- `layer load <layersFilePath>`
+  - Loads a layers file. Relative paths are resolved from the executable directory.
+- `layer active`
+  - Query form: returns a Tcl list of two elements: `{<activeName> <activeType>}`.
+- `layer active <LayerName> <LayerType>`
+  - Sets active layer (name/type matching is case-insensitive).
+- `layer configure ...`
+  - Only `-visible` and `-selectable` are supported.
+  - Value must be exactly `0` or `1`.
+
+### `tool` command family
+
+```tcl
 tool set <toolName>
+```
+
+- Sets the active tool string used by the editor (for example `select` or `rect`).
+
+### `canvas` command family
+
+```tcl
 canvas press <x:int64> <y:int64> <button>
 canvas move <x:int64> <y:int64> <leftDown>
 canvas release <x:int64> <y:int64> <button>
+```
+
+- `x`/`y` are signed 64-bit integer world coordinates.
+- Rectangle draw flow is Tcl-driven:
+  - `canvas press` starts preview when `tool` is `rect`, left button is `1`, and an active layer exists.
+  - `canvas move` updates preview while `leftDown == 1`.
+  - `canvas release` commits the rectangle when `button == 1` and a draw is in progress.
+
+### `view` command family
+
+```tcl
 view pan <dx> <dy>
 view zoom <wheelDelta> <anchorX> <anchorY>
-view grid ?<size>?
+view grid
+view grid <size>
+```
+
+- `view pan` applies a delta to pan offsets.
+- `view zoom` performs anchor-preserving zoom; zoom is clamped to a safe range.
+- `view grid` (query) returns current grid size.
+- `view grid <size>` sets grid spacing; `size` must be `> 0`.
+
+### `bindkey` command family
+
+```tcl
 bindkey set <keySpec> <tclCommand>
 bindkey dispatch <keySpec>
 bindkey list
-bindkey clear ?<keySpec>?
+bindkey clear
+bindkey clear <keySpec>
+```
+
+- `keySpec` uses Qt portable key text (examples: `R`, `Esc`, `Shift+R`, `Ctrl+1`).
+- `bindkey set` stores an exact Tcl command string (brace it if it contains spaces).
+- `bindkey dispatch` executes the bound Tcl command if present (no-op if missing).
+- `bindkey list` returns a Tcl list of `{keySpec command}` pairs.
+- `bindkey clear` clears all bindings; `bindkey clear <keySpec>` removes one.
+
+### `transcript` command family
+
+```tcl
 transcript filter add <globPattern>
 transcript filter remove <globPattern>
 transcript filter list
 transcript filter clear
 ```
 
-## Layers file format
+- Filters are glob patterns matched against the full command text before console echo.
+- `add` ignores case when checking duplicates.
+- `remove` returns the number of removed exact matches.
+- `list` returns a Tcl list of active patterns.
 
-Layer files are plain text with one layer per line:
+### `app` command family
 
-```text
-<name> <type> <name_id>/<type_id> <#RRGGBB> <0xPATTERN64>
+```tcl
+app layout_editor
+app exit
 ```
 
-`PATTERN64` is interpreted as a 64-bit bitmap (8x8 stipple tile): set bits draw the layer color, and clear bits remain transparent.
+- `app layout_editor` shows/focuses the editor window and recenters world origin in view.
+- `app exit` closes the application.
 
-Example (`data/example_layers.txt`):
+## File and script formats
+
+### 1) Layers data files (`*.txt`, e.g. `data/example_layers.txt`)
+
+Plain text, one layer per non-comment line:
+
+```text
+<name> <type> <name_id>/<type_id> <#RRGGBB> <0xPATTERN>
+```
+
+Rules:
+- Blank lines and lines starting with `#` are ignored.
+- Exactly 5 whitespace-separated fields are required.
+- `<name_id>/<type_id>` must parse as unsigned integers (decimal or `0x...`).
+- Color must be a valid Qt color token (normally `#RRGGBB`).
+- Pattern must parse as an unsigned integer token (typically hex like `0x8040201008040201`).
+- Duplicate `<name,type>` identities are rejected.
+- On successful load, all layers default to `visible` + `selectable`, and the first layer becomes active.
+
+Example:
 
 ```text
 Metal1 drawing 1/10 #1f77b4 0x8040201008040201
@@ -56,33 +144,61 @@ Metal2 drawing 2/10 #ff7f0e 0x0F0F
 Metal3 drawing 3/10 #2ca02c 0xAAAA
 ```
 
+### 2) Init script format (`scripts/init.tcl`, `scripts/init.example.tcl`)
+
+A normal Tcl startup script that is executed at app launch (for `init.tcl`).
+Typical content:
+
+```tcl
+layer load sky130_layers.txt
+source scripts/bindkeys.tcl
+source scripts/transcript_filters.tcl
+tool set select
+app layout_editor
+```
+
+Notes:
+- `init.tcl` is the active startup file.
+- `init.example.tcl` is a template for customization.
+- `source` paths should be written to match where scripts are copied/located in your run directory.
+
+### 3) Keybinding script format (`scripts/bindkeys.tcl`)
+
+Each binding line is:
+
+```tcl
+bindkey set <QtPortableKeySpec> <tclCommand>
+```
+
+Examples:
+
+```tcl
+bindkey set R {tool set rect}
+bindkey set Esc {tool set select}
+bindkey set Shift+R {tool set rect}
+```
+
+### 4) Transcript filter script format (`scripts/transcript_filters.tcl`)
+
+Each rule line is:
+
+```tcl
+transcript filter add <globPattern>
+```
+
+Examples:
+
+```tcl
+transcript filter add {canvas move *}
+transcript filter add {canvas *}
+```
 
 ## Interaction behavior
 
-- Selecting a row in the layer palette emits `layer active <name> <type>` to set active layer.
-- Key presses in the editor canvas emit `bindkey dispatch <keySpec>` and execute whatever command is configured for that key.
-- Key combinations are supported via portable key specs (for example `Shift+R`).
-- Console command echo supports glob-based filtering so noisy commands like `canvas move ...` can be hidden.
-- Rectangle draw flow is Tcl-driven:
-  - `canvas press` starts a rectangle on active layer
-  - `canvas move` updates rubber-band preview
-  - `canvas release` commits the rectangle
-- Coordinates are carried as signed 64-bit integers (`int64`) in Tcl canvas commands.
-- Mouse wheel emits `view zoom ...` and middle-drag emits `view pan ...`; Tcl handlers apply the view transform.
-- The canvas grid is anchored to world coordinates (it pans/zooms with the view), and `view grid <size>` updates the grid spacing in world units (`view grid` queries current size).
-
-## Startup initialization
-
-On startup, the application executes `init.tcl` (copied to the build directory).
-An editable example script is provided at `scripts/init.example.tcl`, and the default `scripts/init.tcl` runs:
-
-```tcl
-layer load example_layers.txt
-source bindkeys.tcl
-source transcript_filters.tcl
-```
-
-This initializes the layer palette, loads default key bindings, and applies transcript filters. `scripts/bindkeys.tcl` defines key-to-command mappings (including combinations like `Shift+R`) and `scripts/transcript_filters.tcl` defines command-echo suppression rules.
+- Selecting a row in the layer palette emits `layer active <name> <type>`.
+- Key presses in the editor canvas emit `bindkey dispatch <keySpec>`.
+- Mouse wheel emits `view zoom ...`; middle-drag emits `view pan ...`.
+- The canvas grid is anchored to world coordinates and scales/pans with the view.
 
 ## Ubuntu dependencies
 
