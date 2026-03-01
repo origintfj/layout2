@@ -60,12 +60,14 @@ private slots:
     void onCellChanged(int row, int column);
     void onCurrentRowChanged(int currentRow, int previousRow);
     void onRectangleDeletionRequested(int rectangleIndex);
+    void onMouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
 private:
     QBrush makePatternBrush(const LayerDefinition& layer) const;
     void updateActiveLayerHighlight();
     void applyLayerToRow(int row, const LayerDefinition& layer);
     QTableWidgetItem* makeReadOnlyItem(const QString& text);
+    void refreshStatusLabel();
 
     QTableWidget* m_layerTable;
     LayoutCanvas* m_canvas;
@@ -74,6 +76,10 @@ private:
     QVector<LayerDefinition> m_layers;
     QString m_activeLayerName;
     QString m_activeLayerType;
+    QString m_activeTool{"<none>"};
+    qint64 m_mouseWorldX{0};
+    qint64 m_mouseWorldY{0};
+    bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
     // Committed rectangles currently shown on canvas.
