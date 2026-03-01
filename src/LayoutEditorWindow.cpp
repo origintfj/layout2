@@ -1,4 +1,5 @@
 #include "LayoutEditorWindow.h"
+#include "LayoutSceneModel.h"
 
 #include <QAbstractItemView>
 #include <algorithm>
@@ -69,92 +70,6 @@ quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
     return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
 }
 } // namespace
-
-// Base scene object. Additional object kinds (paths/instances/text) can
-// implement this interface and be inserted into a cell.
-class LayoutObjectModel {
-public:
-    virtual ~LayoutObjectModel() = default;
-
-    virtual bool containsPoint(qint64 x, qint64 y) const = 0;
-    virtual const DrawnRectangle* asRectangle() const { return nullptr; }
-};
-
-class RectangleObjectModel final : public LayoutObjectModel {
-public:
-    explicit RectangleObjectModel(const DrawnRectangle& rectangle)
-        : m_rectangle(rectangle) {}
-
-    bool containsPoint(qint64 x, qint64 y) const override {
-        const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
-        const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
-        const qint64 minY = std::min(m_rectangle.y1, m_rectangle.y2);
-        const qint64 maxY = std::max(m_rectangle.y1, m_rectangle.y2);
-        return x >= minX && x <= maxX && y >= minY && y <= maxY;
-    }
-
-    const DrawnRectangle* asRectangle() const override {
-        return &m_rectangle;
-    }
-
-private:
-    DrawnRectangle m_rectangle;
-};
-
-// Hierarchical container for objects and child cells.
-class LayoutSceneNode {
-public:
-    void addObject(std::shared_ptr<LayoutObjectModel> object) {
-        m_objects.push_back(std::move(object));
-    }
-
-    void addChild(std::shared_ptr<LayoutSceneNode> child) {
-        m_children.push_back(std::move(child));
-    }
-
-    void collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const {
-        for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
-            if (const DrawnRectangle* rectangle = object->asRectangle()) {
-                outRectangles.push_back(rectangle);
-            }
-        }
-
-        for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-            child->collectRectangles(outRectangles);
-        }
-    }
-
-    bool removeRectangleAt(int rectangleIndex) {
-        int mutableIndex = rectangleIndex;
-        return removeRectangleAtRecursive(mutableIndex);
-    }
-
-private:
-    bool removeRectangleAtRecursive(int& rectangleIndex) {
-        for (int i = 0; i < m_objects.size(); ++i) {
-            if (!m_objects[i]->asRectangle()) {
-                continue;
-            }
-
-            if (rectangleIndex == 0) {
-                m_objects.removeAt(i);
-                return true;
-            }
-            --rectangleIndex;
-        }
-
-        for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-            if (child->removeRectangleAtRecursive(rectangleIndex)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
-    QVector<std::shared_ptr<LayoutSceneNode>> m_children;
-};
 
 bool isModifierOnlyKey(int key) {
     return key == Qt::Key_Shift
