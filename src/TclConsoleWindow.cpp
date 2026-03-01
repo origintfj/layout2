@@ -384,7 +384,7 @@ int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj
         }
 
         const QString command = m_keyBindings.value(keySpec);
-        return evaluateCommand(command, true, true, false);
+        return evaluateCommand(command, true, false, false);
     }
 
     if (subCommand == "list") {
