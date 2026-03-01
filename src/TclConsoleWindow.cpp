@@ -3,6 +3,8 @@
 #include <QCoreApplication>
 #include <QAction>
 #include <QDir>
+#include <QEvent>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QPlainTextEdit>
@@ -27,6 +29,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     m_output->setReadOnly(true);
     m_output->setPlaceholderText("Tcl console output...");
     m_input->setPlaceholderText("Enter Tcl command and press Enter");
+    m_input->installEventFilter(this);
     layout->addWidget(m_output);
     layout->addWidget(m_input);
     setCentralWidget(central);
@@ -56,6 +59,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     connect(m_input, &QLineEdit::returnPressed, this, [this]() {
         const QString command = m_input->text().trimmed();
         if (!command.isEmpty()) {
+            pushHistoryCommand(command);
             executeCommand(command);
         }
         m_input->clear();
@@ -87,6 +91,61 @@ TclConsoleWindow::~TclConsoleWindow() {
 
 void TclConsoleWindow::appendTranscript(const QString& line) {
     m_output->appendPlainText(line);
+}
+
+bool TclConsoleWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_input && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Up) {
+            navigateHistory(-1);
+            return true;
+        }
+
+        if (keyEvent->key() == Qt::Key_Down) {
+            navigateHistory(1);
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void TclConsoleWindow::pushHistoryCommand(const QString& command) {
+    m_commandHistory.push_back(command);
+    m_historyIndex = m_commandHistory.size();
+    m_inProgressInput.clear();
+}
+
+void TclConsoleWindow::navigateHistory(const int direction) {
+    if (m_commandHistory.isEmpty()) {
+        return;
+    }
+
+    if (m_historyIndex < 0 || m_historyIndex > m_commandHistory.size()) {
+        m_historyIndex = m_commandHistory.size();
+    }
+
+    if (m_historyIndex == m_commandHistory.size()) {
+        m_inProgressInput = m_input->text();
+    }
+
+    const int nextIndex = m_historyIndex + direction;
+    if (nextIndex < 0) {
+        return;
+    }
+
+    if (nextIndex > m_commandHistory.size()) {
+        return;
+    }
+
+    m_historyIndex = nextIndex;
+    if (m_historyIndex == m_commandHistory.size()) {
+        m_input->setText(m_inProgressInput);
+    } else {
+        m_input->setText(m_commandHistory.at(m_historyIndex));
+    }
+
+    m_input->setCursorPosition(m_input->text().size());
 }
 
 void TclConsoleWindow::executeCommand(const QString& command) {
