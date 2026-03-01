@@ -253,6 +253,15 @@ int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* co
         m_editorWindow->show();
         m_editorWindow->raise();
         m_editorWindow->activateWindow();
+
+        // Center the world origin in the canvas whenever the editor is opened.
+        const QSize viewport = m_editorWindow->canvasViewportSize();
+        if (!viewport.isEmpty()) {
+            m_panX = viewport.width() / 2.0;
+            m_panY = viewport.height() / 2.0;
+            m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        }
+
         Tcl_SetObjResult(interp, Tcl_NewStringObj("layout editor shown", -1));
         return TCL_OK;
     }

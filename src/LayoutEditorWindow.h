@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QPoint>
+#include <QSize>
 #include <QTableWidget>
 #include <QVector>
 #include <memory>
@@ -27,6 +28,8 @@ class LayoutEditorWindow : public QMainWindow {
 public:
     explicit LayoutEditorWindow(QWidget* parent = nullptr);
     ~LayoutEditorWindow() override;
+
+    QSize canvasViewportSize() const;
 
 public slots:
     // Model-to-view refresh hooks.
