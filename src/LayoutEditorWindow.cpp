@@ -379,7 +379,7 @@ private:
         const double firstGridX = std::floor(worldMinX / visibleStep) * visibleStep;
         const double firstGridY = std::floor(worldMinY / visibleStep) * visibleStep;
 
-        painter.setPen(QPen(QColor("#2f2f2f"), 1));
+        painter.setPen(QPen(QColor("#5a5a5a"), 1));
         for (double worldX = firstGridX; worldX <= worldMaxX; worldX += visibleStep) {
             const double screenX = (worldX * m_zoom) + m_panX;
             for (double worldY = firstGridY; worldY <= worldMaxY; worldY += visibleStep) {
