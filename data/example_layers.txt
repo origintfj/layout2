@@ -1,7 +1,7 @@
 # Example layers file format:
-# <name> <type> <#RRGGBB> <0xPATTERN64>
+# <name> <type> <name_id>/<type_id> <#RRGGBB> <0xPATTERN64>
 #
 # These are sample process layers used to bootstrap the editor palette.
-Metal1 drawing #1f77b4 0x8040201008040201
-Metal2 drawing #ff7f0e 0x0F0F
-Metal3 drawing #2ca02c 0xAAAA
+Metal1 drawing 1/10 #1f77b4 0x8040201008040201
+Metal2 drawing 2/10 #ff7f0e 0x0F0F
+Metal3 drawing 3/10 #2ca02c 0xAAAA

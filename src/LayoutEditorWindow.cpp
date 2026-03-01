@@ -3,6 +3,7 @@
 #include <QAbstractItemView>
 #include <algorithm>
 #include <QFrame>
+#include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -63,6 +64,10 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     return QBrush(pixmap);
 }
 
+quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
+    return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
+}
+
 bool isModifierOnlyKey(int key) {
     return key == Qt::Key_Shift
            || key == Qt::Key_Control
@@ -118,6 +123,7 @@ public:
 
     void setLayers(const QVector<LayerDefinition>& layers) {
         m_layers = layers;
+        rebuildLayerLookup();
         validateSelection();
         update();
     }
@@ -269,17 +275,21 @@ private:
 
     // Shared draw helper for committed and preview rectangles.
     void drawRectangle(QPainter& painter, const DrawnRectangle& r, bool preview, bool selected) {
+        const LayerDefinition* layer = layerForRectangle(r);
+        if (!layer) {
+            return;
+        }
         QPointF p1 = worldToScreen(r.x1, r.y1);
         QPointF p2 = worldToScreen(r.x2, r.y2);
         QRectF rect = QRectF(p1, p2).normalized();
 
-        QColor fillColor = r.color;
+        QColor fillColor = layer->color;
         if (selected) {
             fillColor = fillColor.lighter(130);
         }
         fillColor.setAlpha(preview ? 90 : 140);
 
-        QColor outlineColor = r.color;
+        QColor outlineColor = layer->color;
         outlineColor.setAlpha(preview ? 180 : 220);
         if (selected) {
             outlineColor = QColor("#ffffff");
@@ -287,7 +297,7 @@ private:
         }
 
         painter.setPen(QPen(outlineColor, selected ? 1 : 1, preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(patternBrushFor(fillColor, r.pattern));
+        painter.setBrush(patternBrushFor(fillColor, layer->pattern));
         painter.drawRect(rect);
     }
 
@@ -300,12 +310,26 @@ private:
     }
 
     const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
-        for (const LayerDefinition& layer : m_layers) {
-            if (layer.name.compare(rectangle.layerName, Qt::CaseInsensitive) == 0) {
-                return &layer;
-            }
+        const auto it = m_layerIndexByCode.constFind(layerCodeKey(rectangle.layerNameId, rectangle.layerTypeId));
+        if (it == m_layerIndexByCode.cend()) {
+            return nullptr;
         }
-        return nullptr;
+
+        const int index = it.value();
+        if (index < 0 || index >= m_layers.size()) {
+            return nullptr;
+        }
+
+        return &m_layers[index];
+    }
+
+    void rebuildLayerLookup() {
+        m_layerIndexByCode.clear();
+
+        // Lookup index is independent of palette order and optimized for ID-based queries.
+        for (int i = 0; i < m_layers.size(); ++i) {
+            m_layerIndexByCode.insert(layerCodeKey(m_layers[i].nameId, m_layers[i].typeId), i);
+        }
     }
 
     bool isSelectableRectangleAt(const DrawnRectangle& rectangle, qint64 x, qint64 y) const {
@@ -412,6 +436,7 @@ private:
 
     QVector<DrawnRectangle> m_rectangles;
     QVector<LayerDefinition> m_layers;
+    QHash<quint64, int> m_layerIndexByCode;
     DrawnRectangle m_preview;
     QString m_activeTool{"none"};
 

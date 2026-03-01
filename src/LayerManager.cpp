@@ -98,10 +98,10 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
         }
 
         // Expected format:
-        // <name> <type> <#RRGGBB> <0xPATTERN>
+        // <name> <type> <name_id>/<type_id> <#RRGGBB> <0xPATTERN>
         const QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-        if (parts.size() != 4) {
-            error = QString("Invalid line %1 in %2 (expected: name type #RRGGBB 0xPATTERN)")
+        if (parts.size() != 5) {
+            error = QString("Invalid line %1 in %2 (expected: name type name_id/type_id #RRGGBB 0xPATTERN)")
                         .arg(lineNo)
                         .arg(filePath);
             return false;
@@ -116,24 +116,43 @@ bool LayerManager::loadLayersFromFile(const QString& filePath, QString& error) {
             return false;
         }
 
-        const QColor color(parts[2]);
+        const QStringList idParts = parts[2].split('/');
+        if (idParts.size() != 2) {
+            error = QString("Invalid ID token '%1' at line %2 (expected name_id/type_id)")
+                        .arg(parts[2])
+                        .arg(lineNo);
+            return false;
+        }
+
+        bool nameIdOk = false;
+        bool typeIdOk = false;
+        const quint32 nameId = idParts[0].toUInt(&nameIdOk, 0);
+        const quint32 typeId = idParts[1].toUInt(&typeIdOk, 0);
+        if (!nameIdOk || !typeIdOk) {
+            error = QString("Invalid numeric IDs '%1' at line %2 (expected name_id/type_id)")
+                        .arg(parts[2])
+                        .arg(lineNo);
+            return false;
+        }
+
+        const QColor color(parts[3]);
         if (!color.isValid()) {
-            error = QString("Invalid color '%1' at line %2").arg(parts[2]).arg(lineNo);
+            error = QString("Invalid color '%1' at line %2").arg(parts[3]).arg(lineNo);
             return false;
         }
 
         // Pattern token is stored as string but validated numerically.
         bool patternOk = false;
-        parts[3].toULongLong(&patternOk, 0);
+        parts[4].toULongLong(&patternOk, 0);
         if (!patternOk) {
             error = QString("Invalid pattern '%1' at line %2 (expected hex like 0x00FF)")
-                        .arg(parts[3])
+                        .arg(parts[4])
                         .arg(lineNo);
             return false;
         }
 
         // New layers are visible/selectable by default.
-        loaded.push_back({parts[0], parts[1], color, parts[3], true, true});
+        loaded.push_back({parts[0], parts[1], nameId, typeId, color, parts[4], true, true});
         firstLineByIdentity.insert(identityKey, lineNo);
     }
 
@@ -188,8 +207,11 @@ QString LayerManager::serializeLayers() const {
     for (int i = 0; i < m_layers.size(); ++i) {
         const LayerDefinition& layer = m_layers[i];
         const QString activeMark = i == m_activeLayerIndex ? "active" : "inactive";
-        out += QString("%1 {%2} %3 %4 %5 %6 %7\n")
-                   .arg(layer.name, layer.type, layer.color.name(), layer.pattern)
+        out += QString("%1 {%2} %3/%4 %5 %6 %7 %8\n")
+                   .arg(layer.name, layer.type)
+                   .arg(layer.nameId)
+                   .arg(layer.typeId)
+                   .arg(layer.color.name(), layer.pattern)
                    .arg(layer.visible ? "visible" : "hidden")
                    .arg(layer.selectable ? "selectable" : "locked")
                    .arg(activeMark);
