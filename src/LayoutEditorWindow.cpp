@@ -68,6 +68,7 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
 quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
     return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
 }
+} // namespace
 
 // Base scene object. Additional object kinds (paths/instances/text) can
 // implement this interface and be inserted into a cell.
@@ -174,7 +175,6 @@ QString keySpecFromEvent(const QKeyEvent* event) {
     const QKeySequence sequence(modifiers | key);
     return sequence.toString(QKeySequence::PortableText);
 }
-} // namespace
 
 // LayoutCanvas is the drawable area on the right side of the editor.
 //
