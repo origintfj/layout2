@@ -258,13 +258,13 @@ private:
     // Converts world integer coordinates into screen-space doubles.
     QPointF worldToScreen(qint64 x, qint64 y) const {
         return QPointF((static_cast<double>(x) * m_zoom) + m_panX,
-                       (static_cast<double>(y) * m_zoom) + m_panY);
+                       m_panY - (static_cast<double>(y) * m_zoom));
     }
 
     // Converts screen coordinates into world-space doubles.
     QPointF screenToWorld(const QPointF& p) const {
         return QPointF((p.x() - m_panX) / m_zoom,
-                       (p.y() - m_panY) / m_zoom);
+                       (m_panY - p.y()) / m_zoom);
     }
 
     // Shared draw helper for committed and preview rectangles.
@@ -392,7 +392,7 @@ private:
         for (double worldX = firstGridX; worldX <= worldMaxX; worldX += visibleStep) {
             const double screenX = (worldX * m_zoom) + m_panX;
             for (double worldY = firstGridY; worldY <= worldMaxY; worldY += visibleStep) {
-                const double screenY = (worldY * m_zoom) + m_panY;
+                const double screenY = m_panY - (worldY * m_zoom);
                 painter.drawPoint(QPointF(screenX, screenY));
             }
         }
