@@ -31,6 +31,9 @@ set(LAYOUT2_SOURCES
     src/LayerManager.h
     src/LayoutEditorWindow.cpp
     src/LayoutEditorWindow.h
+    src/LayoutSceneModel.cpp
+    src/LayoutSceneModel.h
+    src/LayoutGeometry.h
 )
 
 add_executable(layout2 ${LAYOUT2_SOURCES})

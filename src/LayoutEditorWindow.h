@@ -4,23 +4,14 @@
 #include <QPoint>
 #include <QTableWidget>
 #include <QVector>
+#include <memory>
 
 #include "LayerManager.h"
-
-// DrawnRectangle stores one committed or preview rectangle in world coordinates.
-//
-// Coordinates are 64-bit signed integers as requested by the tool contract.
-struct DrawnRectangle {
-    quint32 layerNameId;
-    quint32 layerTypeId;
-    qint64 x1;
-    qint64 y1;
-    qint64 x2;
-    qint64 y2;
-};
+#include "LayoutGeometry.h"
 
 class QLabel;
 class LayoutCanvas;
+class LayoutSceneNode;
 
 // LayoutEditorWindow is the visual editor child window.
 //
@@ -35,6 +26,7 @@ class LayoutEditorWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit LayoutEditorWindow(QWidget* parent = nullptr);
+    ~LayoutEditorWindow() override;
 
 public slots:
     // Model-to-view refresh hooks.
@@ -81,6 +73,6 @@ private:
     bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
-    // Committed rectangles currently shown on canvas.
-    QVector<DrawnRectangle> m_rectangles;
+    // Root scene container for committed geometry.
+    std::unique_ptr<LayoutSceneNode> m_rootCell;
 };
