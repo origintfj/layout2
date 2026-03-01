@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <tcl.h>
 
+class QEvent;
+class QObject;
 class QLineEdit;
 class QPlainTextEdit;
 
@@ -29,6 +31,8 @@ public slots:
     void executeCommand(const QString& command);
 
 private:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
     // Static C bridges required by Tcl_CreateObjCommand.
     static int LayerCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     static int ToolCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
@@ -54,10 +58,18 @@ private:
     // Console transcript helper.
     void appendTranscript(const QString& line);
     bool shouldSuppressTranscriptCommand(const QString& command) const;
+    int evaluateCommand(const QString& command, bool echoCommand, bool echoResult, bool echoErrorLine);
+    void pushHistoryCommand(const QString& command);
+    void navigateHistory(int direction);
 
     QPlainTextEdit* m_output;
     QLineEdit* m_input;
     Tcl_Interp* m_interp;
+
+    // Bash-like interactive command history state for the input field.
+    QStringList m_commandHistory;
+    int m_historyIndex{-1};
+    QString m_inProgressInput;
 
     // Authoritative layer model.
     LayerManager m_layerManager;
