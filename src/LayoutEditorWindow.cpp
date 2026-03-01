@@ -538,6 +538,10 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
 
 LayoutEditorWindow::~LayoutEditorWindow() = default;
 
+QSize LayoutEditorWindow::canvasViewportSize() const {
+    return m_canvas->size();
+}
+
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
