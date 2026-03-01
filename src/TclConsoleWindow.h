@@ -5,9 +5,10 @@
 #include <QStringList>
 #include <tcl.h>
 
+class QEvent;
+class QObject;
 class QLineEdit;
 class QPlainTextEdit;
-class QKeyEvent;
 
 #include "LayerManager.h"
 #include "LayoutEditorWindow.h"

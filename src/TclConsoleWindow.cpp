@@ -4,6 +4,7 @@
 #include <QAction>
 #include <QDir>
 #include <QEvent>
+#include <QFontDatabase>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -29,6 +30,10 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     m_output->setReadOnly(true);
     m_output->setPlaceholderText("Tcl console output...");
     m_input->setPlaceholderText("Enter Tcl command and press Enter");
+
+    const QFont consoleFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    m_output->setFont(consoleFont);
+    m_input->setFont(consoleFont);
     m_input->installEventFilter(this);
     layout->addWidget(m_output);
     layout->addWidget(m_input);
