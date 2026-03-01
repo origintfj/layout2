@@ -22,7 +22,7 @@ struct DrawnRectangle {
 
 class QLabel;
 class LayoutCanvas;
-class LayoutCellModel;
+class LayoutSceneModelRoot;
 
 // LayoutEditorWindow is the visual editor child window.
 //
@@ -85,5 +85,5 @@ private:
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
     // Root scene container for committed geometry.
-    std::unique_ptr<LayoutCellModel> m_rootCell;
+    std::unique_ptr<LayoutSceneModelRoot> m_rootCell;
 };
