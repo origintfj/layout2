@@ -53,6 +53,9 @@ private slots:
     void onRectangleDeletionRequested(int rectangleIndex);
     void onMouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     QBrush makePatternBrush(const LayerDefinition& layer) const;
     void updateActiveLayerHighlight();

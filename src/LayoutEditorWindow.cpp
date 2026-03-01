@@ -530,11 +530,27 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
+    m_layerTable->installEventFilter(this);
+
     m_canvas->setRootCell(m_rootCell.get());
     refreshStatusLabel();
 }
 
 LayoutEditorWindow::~LayoutEditorWindow() = default;
+
+bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        const QString keySpec = keySpecFromEvent(keyEvent);
+        if (!keySpec.isEmpty()) {
+            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec));
+            keyEvent->accept();
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
 
 QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
     auto* item = new QTableWidgetItem(text);
