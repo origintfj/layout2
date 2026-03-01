@@ -129,6 +129,7 @@ public:
 signals:
     void commandRequested(const QString& command);
     void rectangleDeletionRequested(int rectangleIndex);
+    void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -203,10 +204,13 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override {
         // Move events carry current cursor position + left-button state.
         const QPointF world = screenToWorld(mouseEventPoint(event));
+        const qint64 worldX = static_cast<qint64>(world.x());
+        const qint64 worldY = static_cast<qint64>(world.y());
+        emit mouseWorldPositionChanged(worldX, worldY, true);
         const bool leftDown = event->buttons() & Qt::LeftButton;
         emit commandRequested(QString("canvas move %1 %2 %3")
-                                  .arg(static_cast<qint64>(world.x()))
-                                  .arg(static_cast<qint64>(world.y()))
+                                  .arg(worldX)
+                                  .arg(worldY)
                                   .arg(leftDown ? 1 : 0));
 
         // Middle-button drag emits view pan commands.
@@ -219,6 +223,11 @@ protected:
         }
 
         QWidget::mouseMoveEvent(event);
+    }
+
+    void leaveEvent(QEvent* event) override {
+        emit mouseWorldPositionChanged(0, 0, false);
+        QWidget::leaveEvent(event);
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override {
@@ -485,6 +494,10 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_canvas, &LayoutCanvas::commandRequested, this, &LayoutEditorWindow::commandRequested);
     connect(m_canvas, &LayoutCanvas::rectangleDeletionRequested,
             this, &LayoutEditorWindow::onRectangleDeletionRequested);
+    connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
+            this, &LayoutEditorWindow::onMouseWorldPositionChanged);
+
+    refreshStatusLabel();
 }
 
 QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
@@ -587,15 +600,11 @@ void LayoutEditorWindow::onLayerChanged(int index, const LayerDefinition& layer)
 }
 
 void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName, const QString& layerType) {
-    // Update status label while preserving the existing tool text suffix.
-    QString status = m_statusLabel->text();
-    const int toolIdx = status.indexOf("| Tool:");
-    const QString toolPart = toolIdx >= 0 ? status.mid(toolIdx + 2) : "Tool: <none>";
-    m_statusLabel->setText(QString("Active layer: %1 (%2) | %3").arg(layerName, layerType, toolPart));
-
-    // Highlight corresponding row (without retriggering command emission).
     m_activeLayerName = layerName;
     m_activeLayerType = layerType;
+    refreshStatusLabel();
+
+    // Highlight corresponding row (without retriggering command emission).
     m_internalUpdate = true;
     for (int row = 0; row < m_layers.size(); ++row) {
         if (m_layers[row].name.compare(layerName, Qt::CaseInsensitive) == 0
@@ -610,13 +619,29 @@ void LayoutEditorWindow::onActiveLayerChanged(const QString& layerName, const QS
 }
 
 void LayoutEditorWindow::onToolChanged(const QString& toolName) {
-    QString status = m_statusLabel->text();
-    const int idx = status.indexOf("| Tool:");
-    if (idx >= 0) {
-        status = status.left(idx).trimmed();
-    }
-    m_statusLabel->setText(QString("%1 | Tool: %2").arg(status, toolName));
+    m_activeTool = toolName;
+    refreshStatusLabel();
     m_canvas->setActiveTool(toolName);
+}
+
+void LayoutEditorWindow::onMouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas) {
+    m_mouseInsideCanvas = insideCanvas;
+    if (insideCanvas) {
+        m_mouseWorldX = worldX;
+        m_mouseWorldY = worldY;
+    }
+    refreshStatusLabel();
+}
+
+void LayoutEditorWindow::refreshStatusLabel() {
+    const QString layerPart = m_activeLayerName.isEmpty() || m_activeLayerType.isEmpty()
+                                  ? "<none>"
+                                  : QString("%1 (%2)").arg(m_activeLayerName, m_activeLayerType);
+    const QString cursorPart = m_mouseInsideCanvas
+                                   ? QString("X: %1 Y: %2").arg(m_mouseWorldX).arg(m_mouseWorldY)
+                                   : "X: -- Y: --";
+    m_statusLabel->setText(QString("Active layer: %1 | Tool: %2 | Cursor: %3")
+                               .arg(layerPart, m_activeTool, cursorPart));
 }
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
