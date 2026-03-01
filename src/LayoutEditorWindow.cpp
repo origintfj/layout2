@@ -20,6 +20,7 @@
 #include <QWheelEvent>
 #include <QtGlobal>
 #include <cmath>
+#include <memory>
 
 namespace {
 // Qt5/Qt6 compatibility helper for mouse event coordinates.
@@ -68,6 +69,92 @@ quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
     return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
 }
 
+// Base scene object. Additional object kinds (paths/instances/text) can
+// implement this interface and be inserted into a cell.
+class LayoutObjectModel {
+public:
+    virtual ~LayoutObjectModel() = default;
+
+    virtual bool containsPoint(qint64 x, qint64 y) const = 0;
+    virtual const DrawnRectangle* asRectangle() const { return nullptr; }
+};
+
+class RectangleObjectModel final : public LayoutObjectModel {
+public:
+    explicit RectangleObjectModel(const DrawnRectangle& rectangle)
+        : m_rectangle(rectangle) {}
+
+    bool containsPoint(qint64 x, qint64 y) const override {
+        const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
+        const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
+        const qint64 minY = std::min(m_rectangle.y1, m_rectangle.y2);
+        const qint64 maxY = std::max(m_rectangle.y1, m_rectangle.y2);
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
+    const DrawnRectangle* asRectangle() const override {
+        return &m_rectangle;
+    }
+
+private:
+    DrawnRectangle m_rectangle;
+};
+
+// Hierarchical container for objects and child cells.
+class LayoutCellModel {
+public:
+    void addObject(std::shared_ptr<LayoutObjectModel> object) {
+        m_objects.push_back(std::move(object));
+    }
+
+    void addChild(std::shared_ptr<LayoutCellModel> child) {
+        m_children.push_back(std::move(child));
+    }
+
+    void collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const {
+        for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+            if (const DrawnRectangle* rectangle = object->asRectangle()) {
+                outRectangles.push_back(rectangle);
+            }
+        }
+
+        for (const std::shared_ptr<LayoutCellModel>& child : m_children) {
+            child->collectRectangles(outRectangles);
+        }
+    }
+
+    bool removeRectangleAt(int rectangleIndex) {
+        int mutableIndex = rectangleIndex;
+        return removeRectangleAtRecursive(mutableIndex);
+    }
+
+private:
+    bool removeRectangleAtRecursive(int& rectangleIndex) {
+        for (int i = 0; i < m_objects.size(); ++i) {
+            if (!m_objects[i]->asRectangle()) {
+                continue;
+            }
+
+            if (rectangleIndex == 0) {
+                m_objects.removeAt(i);
+                return true;
+            }
+            --rectangleIndex;
+        }
+
+        for (const std::shared_ptr<LayoutCellModel>& child : m_children) {
+            if (child->removeRectangleAtRecursive(rectangleIndex)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
+    QVector<std::shared_ptr<LayoutCellModel>> m_children;
+};
+
 bool isModifierOnlyKey(int key) {
     return key == Qt::Key_Shift
            || key == Qt::Key_Control
@@ -102,8 +189,8 @@ public:
         setMouseTracking(true);
     }
 
-    void setRectangles(const QVector<DrawnRectangle>& rectangles) {
-        m_rectangles = rectangles;
+    void setRootCell(const LayoutCellModel* rootCell) {
+        m_rootCell = rootCell;
         update();
     }
 
@@ -146,8 +233,9 @@ protected:
         drawGrid(painter);
 
         // Draw committed geometry first.
-        for (int i = 0; i < m_rectangles.size(); ++i) {
-            const DrawnRectangle& r = m_rectangles[i];
+        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
+        for (int i = 0; i < rectangles.size(); ++i) {
+            const DrawnRectangle& r = *rectangles[i];
             const LayerDefinition* layer = layerForRectangle(r);
             if (!layer || !layer->visible) {
                 continue;
@@ -164,7 +252,7 @@ protected:
     void keyPressEvent(QKeyEvent* event) override {
         if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
             && m_selectedIndex >= 0
-            && m_selectedIndex < m_rectangles.size()) {
+            && m_selectedIndex < flattenedRectangles().size()) {
             emit rectangleDeletionRequested(m_selectedIndex);
             m_selectedIndex = -1;
             update();
@@ -301,14 +389,6 @@ private:
         painter.drawRect(rect);
     }
 
-    bool rectangleContainsPoint(const DrawnRectangle& rectangle, qint64 x, qint64 y) const {
-        const qint64 minX = std::min(rectangle.x1, rectangle.x2);
-        const qint64 maxX = std::max(rectangle.x1, rectangle.x2);
-        const qint64 minY = std::min(rectangle.y1, rectangle.y2);
-        const qint64 maxY = std::max(rectangle.y1, rectangle.y2);
-        return x >= minX && x <= maxX && y >= minY && y <= maxY;
-    }
-
     const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
         const auto it = m_layerIndexByCode.constFind(layerCodeKey(rectangle.layerNameId, rectangle.layerTypeId));
         if (it == m_layerIndexByCode.cend()) {
@@ -337,13 +417,24 @@ private:
         if (!layer || !layer->visible || !layer->selectable) {
             return false;
         }
-        return rectangleContainsPoint(rectangle, x, y);
+        return RectangleObjectModel(rectangle).containsPoint(x, y);
+    }
+
+    QVector<const DrawnRectangle*> flattenedRectangles() const {
+        QVector<const DrawnRectangle*> rectangles;
+        if (!m_rootCell) {
+            return rectangles;
+        }
+
+        m_rootCell->collectRectangles(rectangles);
+        return rectangles;
     }
 
     void handleSelectionClick(qint64 x, qint64 y) {
         QVector<int> candidates;
-        for (int i = m_rectangles.size() - 1; i >= 0; --i) {
-            if (isSelectableRectangleAt(m_rectangles[i], x, y)) {
+        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
+        for (int i = rectangles.size() - 1; i >= 0; --i) {
+            if (isSelectableRectangleAt(*rectangles[i], x, y)) {
                 candidates.push_back(i);
             }
         }
@@ -377,12 +468,13 @@ private:
     }
 
     void validateSelection() {
-        if (m_selectedIndex < 0 || m_selectedIndex >= m_rectangles.size()) {
+        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
+        if (m_selectedIndex < 0 || m_selectedIndex >= rectangles.size()) {
             m_selectedIndex = -1;
             return;
         }
 
-        const DrawnRectangle& rectangle = m_rectangles[m_selectedIndex];
+        const DrawnRectangle& rectangle = *rectangles[m_selectedIndex];
         const LayerDefinition* layer = layerForRectangle(rectangle);
         if (!layer || !layer->visible || !layer->selectable) {
             m_selectedIndex = -1;
@@ -434,7 +526,7 @@ private:
         }
     }
 
-    QVector<DrawnRectangle> m_rectangles;
+    const LayoutCellModel* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
     DrawnRectangle m_preview;
@@ -459,7 +551,8 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     : QMainWindow(parent),
       m_layerTable(new QTableWidget()),
       m_canvas(new LayoutCanvas()),
-      m_statusLabel(new QLabel()) {
+      m_statusLabel(new QLabel()),
+      m_rootCell(std::make_unique<LayoutCellModel>()) {
     setWindowTitle("Layout Editor");
     resize(1100, 700);
 
@@ -522,8 +615,11 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
+    m_canvas->setRootCell(m_rootCell.get());
     refreshStatusLabel();
 }
+
+LayoutEditorWindow::~LayoutEditorWindow() = default;
 
 QTableWidgetItem* LayoutEditorWindow::makeReadOnlyItem(const QString& text) {
     auto* item = new QTableWidgetItem(text);
@@ -678,17 +774,20 @@ void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRect
 }
 
 void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {
-    m_rectangles.push_back(rectangle);
-    m_canvas->setRectangles(m_rectangles);
+    m_rootCell->addObject(std::make_shared<RectangleObjectModel>(rectangle));
+    m_canvas->setRootCell(m_rootCell.get());
 }
 
 void LayoutEditorWindow::onRectangleDeletionRequested(int rectangleIndex) {
-    if (rectangleIndex < 0 || rectangleIndex >= m_rectangles.size()) {
+    if (rectangleIndex < 0) {
         return;
     }
 
-    m_rectangles.removeAt(rectangleIndex);
-    m_canvas->setRectangles(m_rectangles);
+    if (!m_rootCell->removeRectangleAt(rectangleIndex)) {
+        return;
+    }
+
+    m_canvas->setRootCell(m_rootCell.get());
 }
 
 void LayoutEditorWindow::onCellChanged(int row, int column) {

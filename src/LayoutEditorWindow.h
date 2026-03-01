@@ -4,6 +4,7 @@
 #include <QPoint>
 #include <QTableWidget>
 #include <QVector>
+#include <memory>
 
 #include "LayerManager.h"
 
@@ -21,6 +22,7 @@ struct DrawnRectangle {
 
 class QLabel;
 class LayoutCanvas;
+class LayoutCellModel;
 
 // LayoutEditorWindow is the visual editor child window.
 //
@@ -35,6 +37,7 @@ class LayoutEditorWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit LayoutEditorWindow(QWidget* parent = nullptr);
+    ~LayoutEditorWindow() override;
 
 public slots:
     // Model-to-view refresh hooks.
@@ -81,6 +84,6 @@ private:
     bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
 
-    // Committed rectangles currently shown on canvas.
-    QVector<DrawnRectangle> m_rectangles;
+    // Root scene container for committed geometry.
+    std::unique_ptr<LayoutCellModel> m_rootCell;
 };
