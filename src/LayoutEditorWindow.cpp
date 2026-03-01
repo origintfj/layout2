@@ -286,7 +286,7 @@ private:
             outlineColor.setAlpha(255);
         }
 
-        painter.setPen(QPen(outlineColor, selected ? 2 : 1, preview ? Qt::DashLine : Qt::SolidLine));
+        painter.setPen(QPen(outlineColor, selected ? 1 : 1, preview ? Qt::DashLine : Qt::SolidLine));
         painter.setBrush(patternBrushFor(fillColor, r.pattern));
         painter.drawRect(rect);
     }
