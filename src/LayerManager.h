@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QColor>
 #include <QString>
+#include <QtGlobal>
 
 // LayerDefinition is the in-memory schema for a single process layer.
 //
@@ -12,6 +13,8 @@
 struct LayerDefinition {
     QString name;       // Human-readable and command-addressable layer name.
     QString type;       // Logical layer class (e.g. drawing, cut, implant).
+    quint32 nameId;     // Numeric identifier paired with layer name in layer file.
+    quint32 typeId;     // Numeric identifier paired with layer type in layer file.
     QColor color;       // Display color used by the canvas/palette swatch.
     QString pattern;    // Pattern token loaded from layer file (hex string).
     bool visible;       // Whether shapes on this layer are currently visible.
