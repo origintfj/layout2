@@ -10,6 +10,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <limits>
+
 TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     : QMainWindow(parent),
       m_output(new QPlainTextEdit(this)),
@@ -578,12 +580,12 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
             return TCL_ERROR;
         }
 
-        // Incremental zoom with bounds to avoid singular/huge transforms.
+        // Incremental zoom with an upper bound to avoid huge transforms.
         const double factor = wheelDelta > 0 ? 1.15 : 1.0 / 1.15;
         const double oldZoom = m_zoom;
         m_zoom *= factor;
-        if (m_zoom < 0.05) {
-            m_zoom = 0.05;
+        if (m_zoom < std::numeric_limits<double>::min()) {
+            m_zoom = std::numeric_limits<double>::min();
         }
         if (m_zoom > 200.0) {
             m_zoom = 200.0;
