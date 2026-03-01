@@ -102,13 +102,13 @@ private:
 };
 
 // Hierarchical container for objects and child cells.
-class LayoutSceneModelRoot {
+class LayoutSceneRoot {
 public:
     void addObject(std::shared_ptr<LayoutObjectModel> object) {
         m_objects.push_back(std::move(object));
     }
 
-    void addChild(std::shared_ptr<LayoutSceneModelRoot> child) {
+    void addChild(std::shared_ptr<LayoutSceneRoot> child) {
         m_children.push_back(std::move(child));
     }
 
@@ -119,7 +119,7 @@ public:
             }
         }
 
-        for (const std::shared_ptr<LayoutSceneModelRoot>& child : m_children) {
+        for (const std::shared_ptr<LayoutSceneRoot>& child : m_children) {
             child->collectRectangles(outRectangles);
         }
     }
@@ -143,7 +143,7 @@ private:
             --rectangleIndex;
         }
 
-        for (const std::shared_ptr<LayoutSceneModelRoot>& child : m_children) {
+        for (const std::shared_ptr<LayoutSceneRoot>& child : m_children) {
             if (child->removeRectangleAtRecursive(rectangleIndex)) {
                 return true;
             }
@@ -153,7 +153,7 @@ private:
     }
 
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
-    QVector<std::shared_ptr<LayoutSceneModelRoot>> m_children;
+    QVector<std::shared_ptr<LayoutSceneRoot>> m_children;
 };
 
 bool isModifierOnlyKey(int key) {
@@ -189,7 +189,7 @@ public:
         setMouseTracking(true);
     }
 
-    void setRootCell(const LayoutSceneModelRoot* rootCell) {
+    void setRootCell(const LayoutSceneRoot* rootCell) {
         m_rootCell = rootCell;
         update();
     }
@@ -526,7 +526,7 @@ private:
         }
     }
 
-    const LayoutSceneModelRoot* m_rootCell{nullptr};
+    const LayoutSceneRoot* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
     DrawnRectangle m_preview;
@@ -552,7 +552,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
       m_layerTable(new QTableWidget()),
       m_canvas(new LayoutCanvas()),
       m_statusLabel(new QLabel()),
-      m_rootCell(std::make_unique<LayoutSceneModelRoot>()) {
+      m_rootCell(std::make_unique<LayoutSceneRoot>()) {
     setWindowTitle("Layout Editor");
     resize(1100, 700);
 
