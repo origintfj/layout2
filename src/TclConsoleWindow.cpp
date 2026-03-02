@@ -105,6 +105,17 @@ void TclConsoleWindow::appendTranscript(const QString& line) {
 }
 
 bool TclConsoleWindow::eventFilter(QObject* watched, QEvent* event) {
+    for (auto it = m_sessionController.sessions().cbegin(); it != m_sessionController.sessions().cend(); ++it) {
+        if (watched == it.value().window) {
+            if (event->type() == QEvent::WindowActivate) {
+                setActiveEditor(it.key());
+            } else if (event->type() == QEvent::WindowDeactivate) {
+                refreshEditorWindowTitles();
+            }
+            break;
+        }
+    }
+
     if (watched == m_input && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Up) {
@@ -257,15 +268,19 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
 
     connect(window, &QObject::destroyed, this, [this, editorId]() {
         m_sessionController.removeSession(editorId);
+        refreshEditorWindowTitles();
     });
 
     applySessionToWindow(*session);
+    session->window->installEventFilter(this);
     session->window->show();
     session->window->raise();
     session->window->activateWindow();
 
     if (activate) {
         setActiveEditor(editorId);
+    } else {
+        refreshEditorWindowTitles();
     }
 
     return editorId;
@@ -273,6 +288,18 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
 
 void TclConsoleWindow::setActiveEditor(const int editorId) {
     m_sessionController.setActiveEditor(editorId);
+    refreshEditorWindowTitles();
+}
+
+void TclConsoleWindow::refreshEditorWindowTitles() {
+    const int activeEditorId = m_sessionController.activeEditorId();
+    for (auto it = m_sessionController.sessions().begin(); it != m_sessionController.sessions().end(); ++it) {
+        if (!it.value().window) {
+            continue;
+        }
+
+        it.value().window->setEditorIdentity(it.key(), it.key() == activeEditorId);
+    }
 }
 
 bool TclConsoleWindow::shouldSuppressTranscriptCommand(const QString& command) const {

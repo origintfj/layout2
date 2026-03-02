@@ -473,7 +473,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
       m_canvas(new LayoutCanvas()),
       m_statusLabel(new QLabel()),
       m_rootCell(std::make_unique<LayoutSceneNode>()) {
-    setWindowTitle("Layout Editor");
+    refreshWindowTitle();
     resize(1100, 700);
 
     auto* central = new QWidget(this);
@@ -545,6 +545,12 @@ LayoutEditorWindow::~LayoutEditorWindow() = default;
 
 QSize LayoutEditorWindow::canvasViewportSize() const {
     return m_canvas->size();
+}
+
+void LayoutEditorWindow::setEditorIdentity(const int editorId, const bool isActive) {
+    m_editorId = editorId;
+    m_isActiveEditor = isActive;
+    refreshWindowTitle();
 }
 
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -703,6 +709,12 @@ void LayoutEditorWindow::refreshStatusLabel() {
                                    : "X: -- Y: --";
     m_statusLabel->setText(QString("Active layer: %1 | Tool: %2 | Cursor: %3")
                                .arg(layerPart, m_activeTool, cursorPart));
+}
+
+void LayoutEditorWindow::refreshWindowTitle() {
+    const QString editorPart = m_editorId > 0 ? QString::number(m_editorId) : QString("?");
+    setWindowTitle(QString("Layout Editor %1 [%2]")
+                       .arg(editorPart, m_isActiveEditor ? QString("active") : QString("inactive")));
 }
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
