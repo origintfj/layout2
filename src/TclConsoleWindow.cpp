@@ -244,6 +244,7 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
     window->setAttribute(Qt::WA_DeleteOnClose, true);
 
     const int editorId = m_sessionController.createSession(window);
+    window->setEditorId(editorId);
     EditorSession* session = sessionById(editorId);
     if (!session) {
         return 0;

@@ -473,7 +473,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
       m_canvas(new LayoutCanvas()),
       m_statusLabel(new QLabel()),
       m_rootCell(std::make_unique<LayoutSceneNode>()) {
-    setWindowTitle("Layout Editor");
+    refreshWindowTitle();
     resize(1100, 700);
 
     auto* central = new QWidget(this);
@@ -542,6 +542,20 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
 }
 
 LayoutEditorWindow::~LayoutEditorWindow() = default;
+
+void LayoutEditorWindow::setEditorId(const int editorId) {
+    m_editorId = editorId;
+    refreshWindowTitle();
+}
+
+void LayoutEditorWindow::refreshWindowTitle() {
+    if (m_editorId > 0) {
+        setWindowTitle(QString("Layout Editor #%1").arg(m_editorId));
+        return;
+    }
+
+    setWindowTitle("Layout Editor");
+}
 
 QSize LayoutEditorWindow::canvasViewportSize() const {
     return m_canvas->size();

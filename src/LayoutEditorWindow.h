@@ -30,6 +30,7 @@ public:
     ~LayoutEditorWindow() override;
 
     QSize canvasViewportSize() const;
+    void setEditorId(int editorId);
 
 public slots:
     // Model-to-view refresh hooks.
@@ -60,6 +61,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    void refreshWindowTitle();
     QBrush makePatternBrush(const LayerDefinition& layer) const;
     void updateActiveLayerHighlight();
     void applyLayerToRow(int row, const LayerDefinition& layer);
@@ -78,6 +80,7 @@ private:
     qint64 m_mouseWorldY{0};
     bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
+    int m_editorId{0};
 
     // Root scene container for committed geometry.
     std::unique_ptr<LayoutSceneNode> m_rootCell;
