@@ -6,6 +6,7 @@
 #include <tcl.h>
 
 class QEvent;
+class QCloseEvent;
 class QObject;
 class QLineEdit;
 class QPlainTextEdit;
@@ -33,6 +34,7 @@ public slots:
     void executeEditorCommand(int editorId, const QString& command, bool requestActivation);
 
 private:
+    void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
     // Static C bridges required by Tcl_CreateObjCommand.

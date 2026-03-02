@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QAction>
+#include <QCloseEvent>
 #include <QDir>
 #include <QEvent>
 #include <QFontDatabase>
@@ -81,6 +82,24 @@ TclConsoleWindow::~TclConsoleWindow() {
         Tcl_DeleteInterp(m_interp);
         m_interp = nullptr;
     }
+}
+
+void TclConsoleWindow::closeEvent(QCloseEvent* event) {
+    // Ensure auxiliary editor windows are explicitly torn down when the
+    // interpreter window is closed.
+    QVector<LayoutEditorWindow*> windows;
+    windows.reserve(m_sessionController.sessions().size());
+    for (auto it = m_sessionController.sessions().cbegin(); it != m_sessionController.sessions().cend(); ++it) {
+        if (it.value().window) {
+            windows.push_back(it.value().window);
+        }
+    }
+
+    for (LayoutEditorWindow* window : windows) {
+        window->close();
+    }
+
+    QMainWindow::closeEvent(event);
 }
 
 void TclConsoleWindow::appendTranscript(const QString& line) {
@@ -220,7 +239,7 @@ void TclConsoleWindow::applySessionToWindow(EditorSession& session) {
 }
 
 int TclConsoleWindow::createEditorSession(const bool activate) {
-    auto* window = new LayoutEditorWindow();
+    auto* window = new LayoutEditorWindow(this);
     window->setAttribute(Qt::WA_DeleteOnClose, true);
 
     const int editorId = m_sessionController.createSession(window);
