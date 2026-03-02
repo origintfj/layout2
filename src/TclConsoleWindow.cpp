@@ -70,7 +70,6 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
         m_input->clear();
     });
 
-    (void)createEditorSession(true);
 
     // Startup script bootstraps initial palette/tool config.
     appendTranscript("Interpreter ready. Loading init.tcl...");
@@ -252,11 +251,15 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
     }
 
     initializeSessionLayers(*session);
+    session->activeTool = m_defaultTool;
 
     connect(window, &LayoutEditorWindow::commandRequested,
             this, [this, editorId](const QString& command, const bool requestActivation) {
                 executeEditorCommand(editorId, command, requestActivation);
             });
+    connect(window, &LayoutEditorWindow::activationRequested, this, [this, editorId]() {
+        setActiveEditor(editorId);
+    });
 
     connect(window, &QObject::destroyed, this, [this, editorId]() {
         m_sessionController.removeSession(editorId);
@@ -743,13 +746,16 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
         return TCL_ERROR;
     }
 
+    const QString toolName = QString::fromUtf8(Tcl_GetString(objv[2]));
+    m_defaultTool = toolName;
+
     EditorSession* session = effectiveSession();
     if (!session) {
-        Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
-        return TCL_ERROR;
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("default tool: %1").arg(toolName).toUtf8().constData(), -1));
+        return TCL_OK;
     }
 
-    session->activeTool = QString::fromUtf8(Tcl_GetString(objv[2]));
+    session->activeTool = toolName;
     session->window->onToolChanged(session->activeTool);
     Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("tool: %1").arg(session->activeTool).toUtf8().constData(), -1));
     return TCL_OK;

@@ -102,4 +102,7 @@ private:
 
     // Glob patterns for commands that should not be echoed to the transcript.
     QStringList m_transcriptFilters;
+
+    // Tool to apply to newly created sessions and when no editor is active yet.
+    QString m_defaultTool{"none"};
 };

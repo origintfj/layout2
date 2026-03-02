@@ -138,6 +138,7 @@ signals:
     void commandRequested(const QString& command, bool requestActivation);
     void rectangleDeletionRequested(int rectangleIndex);
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
+    void interactionStarted();
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -186,6 +187,7 @@ protected:
     }
 
     void mousePressEvent(QMouseEvent* event) override {
+        emit interactionStarted();
         if (event->button() == Qt::LeftButton) {
             const QPointF world = screenToWorld(mouseEventPoint(event));
             const qint64 worldX = static_cast<qint64>(world.x());
@@ -534,6 +536,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
             this, &LayoutEditorWindow::onRectangleDeletionRequested);
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
+    connect(m_canvas, &LayoutCanvas::interactionStarted, this, [this]() { emit activationRequested(); });
 
     m_layerTable->installEventFilter(this);
 
@@ -568,13 +571,20 @@ QSize LayoutEditorWindow::canvasViewportSize() const {
 }
 
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
-        auto* keyEvent = static_cast<QKeyEvent*>(event);
-        const QString keySpec = keySpecFromEvent(keyEvent);
-        if (!keySpec.isEmpty()) {
-            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec), true);
-            keyEvent->accept();
-            return true;
+    if (watched == m_layerTable) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            emit activationRequested();
+        }
+
+        if (event->type() == QEvent::KeyPress) {
+            auto* keyEvent = static_cast<QKeyEvent*>(event);
+            emit activationRequested();
+            const QString keySpec = keySpecFromEvent(keyEvent);
+            if (!keySpec.isEmpty()) {
+                emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec), true);
+                keyEvent->accept();
+                return true;
+            }
         }
     }
 
