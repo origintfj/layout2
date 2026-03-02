@@ -103,6 +103,7 @@ transcript filter clear
 ```
 
 - Filters are glob patterns matched against the full command text before console echo.
+- Commands entered directly in the console input are always echoed (filters apply to scripted/automated command execution).
 - `add` ignores case when checking duplicates.
 - `remove` returns the number of removed exact matches.
 - `list` returns a Tcl list of active patterns.

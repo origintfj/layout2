@@ -6,5 +6,7 @@
 layer load sky130_layers.txt
 source scripts/bindkeys.tcl
 source scripts/transcript_filters.tcl
-tool set select
+# NOTE: Tcl `source` returns the result of the last command in the file.
+# Keep `tool set select` last so its status text is shown in startup transcript.
 app layout_editor
+tool set select
