@@ -536,6 +536,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
     m_layerTable->installEventFilter(this);
+    m_canvas->installEventFilter(this);
 
     m_canvas->setRootCell(m_rootCell.get());
     refreshStatusLabel();
@@ -554,6 +555,10 @@ void LayoutEditorWindow::setEditorIdentity(const int editorId, const bool isActi
 }
 
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
+    if ((watched == m_layerTable || watched == m_canvas) && event->type() == QEvent::MouseButtonPress) {
+        emit activationRequested();
+    }
+
     if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         const QString keySpec = keySpecFromEvent(keyEvent);

@@ -255,6 +255,11 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
                 executeEditorCommand(editorId, command, requestActivation);
             });
 
+    connect(window, &LayoutEditorWindow::activationRequested,
+            this, [this, editorId]() {
+                setActiveEditor(editorId);
+            });
+
     connect(window, &QObject::destroyed, this, [this, editorId]() {
         m_sessionController.removeSession(editorId);
         refreshEditorWindowTitles();
