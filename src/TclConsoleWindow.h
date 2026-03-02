@@ -100,6 +100,9 @@ private:
     // Key binding table used by bindkey set/dispatch commands.
     QHash<QString, QString> m_keyBindings;
 
+    // Default tool applied to newly created editor sessions.
+    QString m_defaultTool{"none"};
+
     // Glob patterns for commands that should not be echoed to the transcript.
     QStringList m_transcriptFilters;
 };

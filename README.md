@@ -165,6 +165,7 @@ Notes:
 - `init.tcl` is the active startup file.
 - `init.example.tcl` is a template for customization.
 - `source` paths should be written to match where scripts are copied/located in your run directory.
+- Add `app layout_editor` if you want a layout editor window to open automatically at startup.
 
 ### 3) Keybinding script format (`scripts/bindkeys.tcl`)
 
