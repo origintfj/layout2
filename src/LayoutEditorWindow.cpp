@@ -713,8 +713,8 @@ void LayoutEditorWindow::refreshStatusLabel() {
 
 void LayoutEditorWindow::refreshWindowTitle() {
     const QString editorPart = m_editorId > 0 ? QString::number(m_editorId) : QString("?");
-    setWindowTitle(QString("Layout Editor %1 [%2]")
-                       .arg(editorPart, m_isActiveEditor ? QString("active") : QString("inactive")));
+    const QString activeSuffix = m_isActiveEditor ? QString(" [active]") : QString();
+    setWindowTitle(QString("Layout Editor %1%2").arg(editorPart, activeSuffix));
 }
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
