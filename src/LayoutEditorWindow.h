@@ -31,6 +31,7 @@ public:
 
     QSize canvasViewportSize() const;
     void setEditorId(int editorId);
+    void setEditorActive(bool isActiveEditor);
 
 public slots:
     // Model-to-view refresh hooks.
@@ -81,6 +82,7 @@ private:
     bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
     int m_editorId{0};
+    bool m_isActiveEditor{false};
 
     // Root scene container for committed geometry.
     std::unique_ptr<LayoutSceneNode> m_rootCell;

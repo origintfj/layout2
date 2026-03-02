@@ -548,13 +548,19 @@ void LayoutEditorWindow::setEditorId(const int editorId) {
     refreshWindowTitle();
 }
 
+void LayoutEditorWindow::setEditorActive(const bool isActiveEditor) {
+    m_isActiveEditor = isActiveEditor;
+    refreshWindowTitle();
+}
+
 void LayoutEditorWindow::refreshWindowTitle() {
+    const QString activeSuffix = m_isActiveEditor ? " (active)" : "";
     if (m_editorId > 0) {
-        setWindowTitle(QString("Layout Editor #%1").arg(m_editorId));
+        setWindowTitle(QString("Layout Editor #%1%2").arg(m_editorId).arg(activeSuffix));
         return;
     }
 
-    setWindowTitle("Layout Editor");
+    setWindowTitle(QString("Layout Editor%1").arg(activeSuffix));
 }
 
 QSize LayoutEditorWindow::canvasViewportSize() const {
