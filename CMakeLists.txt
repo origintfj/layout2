@@ -34,6 +34,8 @@ set(LAYOUT2_SOURCES
     src/LayoutSceneModel.cpp
     src/LayoutSceneModel.h
     src/LayoutGeometry.h
+    src/EditorSessionController.cpp
+    src/EditorSessionController.h
 )
 
 add_executable(layout2 ${LAYOUT2_SOURCES})

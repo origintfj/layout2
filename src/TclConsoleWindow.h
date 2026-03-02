@@ -6,12 +6,14 @@
 #include <tcl.h>
 
 class QEvent;
+class QCloseEvent;
 class QObject;
 class QLineEdit;
 class QPlainTextEdit;
 
 #include "LayerManager.h"
 #include "LayoutEditorWindow.h"
+#include "EditorSessionController.h"
 
 // TclConsoleWindow hosts the primary Tcl interpreter UI.
 //
@@ -29,8 +31,10 @@ public:
 public slots:
     // Evaluates a Tcl command and appends result/error text to transcript.
     void executeCommand(const QString& command);
+    void executeEditorCommand(int editorId, const QString& command, bool requestActivation);
 
 private:
+    void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
     // Static C bridges required by Tcl_CreateObjCommand.
@@ -59,8 +63,24 @@ private:
     void appendTranscript(const QString& line);
     bool shouldSuppressTranscriptCommand(const QString& command) const;
     int evaluateCommand(const QString& command, bool echoCommand, bool echoResult, bool echoErrorLine);
+    int evaluateCommandForEditor(const QString& command,
+                                 bool echoCommand,
+                                 bool echoResult,
+                                 bool echoErrorLine,
+                                 int editorId,
+                                 bool requestActivation);
     void pushHistoryCommand(const QString& command);
     void navigateHistory(int direction);
+
+    EditorSession* activeSession();
+    const EditorSession* activeSession() const;
+    EditorSession* sessionById(int editorId);
+    const EditorSession* sessionById(int editorId) const;
+    EditorSession* effectiveSession();
+    void initializeSessionLayers(EditorSession& session);
+    void applySessionToWindow(EditorSession& session);
+    int createEditorSession(bool activate);
+    void setActiveEditor(int editorId);
 
     QPlainTextEdit* m_output;
     QLineEdit* m_input;
@@ -74,19 +94,8 @@ private:
     // Authoritative layer model.
     LayerManager m_layerManager;
 
-    // Child window that emits GUI interactions as Tcl commands.
-    LayoutEditorWindow* m_editorWindow;
-
-    // Current drawing/tool session state.
-    QString m_activeTool{"none"};
-    bool m_rectInProgress{false};
-    DrawnRectangle m_previewRectangle{};
-
-    // Current view transform state.
-    double m_zoom{1.0};
-    double m_panX{0.0};
-    double m_panY{0.0};
-    double m_gridSize{40.0};
+    // Per-editor command/view/tool state controller.
+    EditorSessionController m_sessionController;
 
     // Key binding table used by bindkey set/dispatch commands.
     QHash<QString, QString> m_keyBindings;

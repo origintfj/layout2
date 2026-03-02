@@ -135,7 +135,7 @@ public:
     }
 
 signals:
-    void commandRequested(const QString& command);
+    void commandRequested(const QString& command, bool requestActivation);
     void rectangleDeletionRequested(int rectangleIndex);
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
@@ -177,7 +177,7 @@ protected:
 
         const QString keySpec = keySpecFromEvent(event);
         if (!keySpec.isEmpty()) {
-            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec));
+            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec), true);
             event->accept();
             return;
         }
@@ -199,7 +199,8 @@ protected:
 
             emit commandRequested(QString("canvas press %1 %2 1")
                                       .arg(worldX)
-                                      .arg(worldY));
+                                      .arg(worldY),
+                                true);
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -220,7 +221,8 @@ protected:
         emit commandRequested(QString("canvas move %1 %2 %3")
                                   .arg(worldX)
                                   .arg(worldY)
-                                  .arg(leftDown ? 1 : 0));
+                                  .arg(leftDown ? 1 : 0),
+                            false);
 
         // Middle-button drag emits view pan commands.
         if (m_middlePanning && (event->buttons() & Qt::MiddleButton)) {
@@ -228,7 +230,8 @@ protected:
             m_lastPanPoint = mouseEventPoint(event);
             emit commandRequested(QString("view pan %1 %2")
                                       .arg(delta.x())
-                                      .arg(delta.y()));
+                                      .arg(delta.y()),
+                                false);
         }
 
         QWidget::mouseMoveEvent(event);
@@ -244,7 +247,8 @@ protected:
             const QPointF world = screenToWorld(mouseEventPoint(event));
             emit commandRequested(QString("canvas release %1 %2 1")
                                       .arg(static_cast<qint64>(world.x()))
-                                      .arg(static_cast<qint64>(world.y())));
+                                      .arg(static_cast<qint64>(world.y())),
+                                false);
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -259,7 +263,8 @@ protected:
         emit commandRequested(QString("view zoom %1 %2 %3")
                                   .arg(event->angleDelta().y())
                                   .arg(pos.x())
-                                  .arg(pos.y()));
+                                  .arg(pos.y()),
+                            false);
         event->accept();
     }
 
@@ -547,7 +552,7 @@ bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         const QString keySpec = keySpecFromEvent(keyEvent);
         if (!keySpec.isEmpty()) {
-            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec));
+            emit commandRequested(QString("bindkey dispatch {%1}").arg(keySpec), true);
             keyEvent->accept();
             return true;
         }
@@ -758,7 +763,8 @@ void LayoutEditorWindow::onCellChanged(int row, int column) {
     const QString option = column == 3 ? "-visible" : "-selectable";
     emit commandRequested(QString("layer configure {%1} {%2} %3 %4")
                               .arg(current.name, current.type, option)
-                              .arg(requestedValue ? 1 : 0));
+                              .arg(requestedValue ? 1 : 0),
+                        true);
 }
 
 void LayoutEditorWindow::onCurrentRowChanged(int currentRow, int) {
@@ -768,7 +774,8 @@ void LayoutEditorWindow::onCurrentRowChanged(int currentRow, int) {
 
     // Row selection sets active layer via Tcl command.
     emit commandRequested(QString("layer active {%1} {%2}")
-                              .arg(m_layers[currentRow].name, m_layers[currentRow].type));
+                              .arg(m_layers[currentRow].name, m_layers[currentRow].type),
+                        true);
 }
 
 #include "LayoutEditorWindow.moc"
