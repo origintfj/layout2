@@ -162,8 +162,9 @@ void TclConsoleWindow::navigateHistory(const int direction) {
 int TclConsoleWindow::evaluateCommand(const QString& command,
                                       const bool echoCommand,
                                       const bool echoResult,
-                                      const bool echoErrorLine) {
-    const bool suppressEcho = shouldSuppressTranscriptCommand(command);
+                                      const bool echoErrorLine,
+                                      const bool applyTranscriptFilters) {
+    const bool suppressEcho = applyTranscriptFilters && shouldSuppressTranscriptCommand(command);
     if (echoCommand && !suppressEcho) {
         appendTranscript(QString("> %1").arg(command));
     }
@@ -202,7 +203,7 @@ int TclConsoleWindow::evaluateCommandForEditor(const QString& command,
 }
 
 void TclConsoleWindow::executeCommand(const QString& command) {
-    (void)evaluateCommand(command, true, true, true);
+    (void)evaluateCommand(command, true, true, true, false);
 }
 
 void TclConsoleWindow::executeEditorCommand(const int editorId, const QString& command, const bool requestActivation) {
