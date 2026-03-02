@@ -19,8 +19,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     : QMainWindow(parent),
       m_output(new QPlainTextEdit(this)),
       m_input(new QLineEdit(this)),
-      m_interp(Tcl_CreateInterp()),
-      m_editorWindow(new LayoutEditorWindow(this)) {
+      m_interp(Tcl_CreateInterp()) {
     setWindowTitle("Tcl Interpreter");
     resize(900, 450);
 
@@ -70,17 +69,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
         m_input->clear();
     });
 
-    // GUI interactions from child editor route through the same execute path.
-    connect(m_editorWindow, &LayoutEditorWindow::commandRequested,
-            this, &TclConsoleWindow::executeCommand);
-
-    // Model->view synchronization wiring.
-    connect(&m_layerManager, &LayerManager::layersReset,
-            m_editorWindow, &LayoutEditorWindow::setLayers);
-    connect(&m_layerManager, &LayerManager::layerChanged,
-            m_editorWindow, &LayoutEditorWindow::onLayerChanged);
-    connect(&m_layerManager, &LayerManager::activeLayerChanged,
-            m_editorWindow, &LayoutEditorWindow::onActiveLayerChanged);
+    (void)createEditorSession(true);
 
     // Startup script bootstraps initial palette/tool config.
     appendTranscript("Interpreter ready. Loading init.tcl...");
@@ -177,8 +166,94 @@ int TclConsoleWindow::evaluateCommand(const QString& command,
     return rc;
 }
 
+int TclConsoleWindow::evaluateCommandForEditor(const QString& command,
+                                               const bool echoCommand,
+                                               const bool echoResult,
+                                               const bool echoErrorLine,
+                                               const int editorId,
+                                               const bool requestActivation) {
+    const int previousCommandEditorId = m_sessionController.commandEditorId();
+    m_sessionController.setCommandEditorId(editorId);
+    if (requestActivation && editorId > 0) {
+        setActiveEditor(editorId);
+    }
+
+    const int rc = evaluateCommand(command, echoCommand, echoResult, echoErrorLine);
+    m_sessionController.setCommandEditorId(previousCommandEditorId);
+    return rc;
+}
+
 void TclConsoleWindow::executeCommand(const QString& command) {
     (void)evaluateCommand(command, true, true, true);
+}
+
+void TclConsoleWindow::executeEditorCommand(const int editorId, const QString& command, const bool requestActivation) {
+    (void)evaluateCommandForEditor(command, true, true, true, editorId, requestActivation);
+}
+
+EditorSession* TclConsoleWindow::sessionById(const int editorId) {
+    return m_sessionController.sessionById(editorId);
+}
+
+const EditorSession* TclConsoleWindow::sessionById(const int editorId) const {
+    return m_sessionController.sessionById(editorId);
+}
+
+EditorSession* TclConsoleWindow::activeSession() {
+    return m_sessionController.activeSession();
+}
+
+const EditorSession* TclConsoleWindow::activeSession() const {
+    return m_sessionController.activeSession();
+}
+
+EditorSession* TclConsoleWindow::effectiveSession() {
+    return m_sessionController.effectiveSession();
+}
+
+void TclConsoleWindow::initializeSessionLayers(EditorSession& session) {
+    m_sessionController.initializeSessionLayers(session, m_layerManager.layers());
+}
+
+void TclConsoleWindow::applySessionToWindow(EditorSession& session) {
+    m_sessionController.applySessionToWindow(session);
+}
+
+int TclConsoleWindow::createEditorSession(const bool activate) {
+    auto* window = new LayoutEditorWindow();
+    window->setAttribute(Qt::WA_DeleteOnClose, true);
+
+    const int editorId = m_sessionController.createSession(window);
+    EditorSession* session = sessionById(editorId);
+    if (!session) {
+        return 0;
+    }
+
+    initializeSessionLayers(*session);
+
+    connect(window, &LayoutEditorWindow::commandRequested,
+            this, [this, editorId](const QString& command, const bool requestActivation) {
+                executeEditorCommand(editorId, command, requestActivation);
+            });
+
+    connect(window, &QObject::destroyed, this, [this, editorId]() {
+        m_sessionController.removeSession(editorId);
+    });
+
+    applySessionToWindow(*session);
+    session->window->show();
+    session->window->raise();
+    session->window->activateWindow();
+
+    if (activate) {
+        setActiveEditor(editorId);
+    }
+
+    return editorId;
+}
+
+void TclConsoleWindow::setActiveEditor(const int editorId) {
+    m_sessionController.setActiveEditor(editorId);
 }
 
 bool TclConsoleWindow::shouldSuppressTranscriptCommand(const QString& command) const {
@@ -325,19 +400,19 @@ int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* co
     }
 
     if (subCommand == "layout_editor") {
-        m_editorWindow->show();
-        m_editorWindow->raise();
-        m_editorWindow->activateWindow();
-
-        // Center the world origin in the canvas whenever the editor is opened.
-        const QSize viewport = m_editorWindow->canvasViewportSize();
-        if (!viewport.isEmpty()) {
-            m_panX = viewport.width() / 2.0;
-            m_panY = viewport.height() / 2.0;
-            m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        const int editorId = createEditorSession(true);
+        EditorSession* session = sessionById(editorId);
+        if (session && session->window) {
+            // Center the world origin in the canvas whenever an editor is opened.
+            const QSize viewport = session->window->canvasViewportSize();
+            if (!viewport.isEmpty()) {
+                session->panX = viewport.width() / 2.0;
+                session->panY = viewport.height() / 2.0;
+                session->window->onViewChanged(session->zoom, session->panX, session->panY, session->gridSize);
+            }
         }
 
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("layout editor shown", -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("layout editor %1 shown").arg(editorId).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -384,6 +459,9 @@ int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj
         }
 
         const QString command = m_keyBindings.value(keySpec);
+        if (m_sessionController.commandEditorId() > 0) {
+            return evaluateCommandForEditor(command, true, false, false, m_sessionController.commandEditorId(), false);
+        }
         return evaluateCommand(command, true, false, false);
     }
 
@@ -425,9 +503,28 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
     }
 
     const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
+    EditorSession* session = effectiveSession();
 
     if (subCommand == "list") {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(m_layerManager.serializeLayers().toUtf8().constData(), -1));
+        if (!session) {
+            Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        QString out;
+        for (const LayerDefinition& layer : session->layers) {
+            const bool isActive = layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
+                                  && layer.type.compare(session->activeLayerType, Qt::CaseInsensitive) == 0;
+            out += QString("%1 {%2} %3/%4 %5 %6 %7 %8\n")
+                       .arg(layer.name, layer.type)
+                       .arg(layer.nameId)
+                       .arg(layer.typeId)
+                       .arg(layer.color.name(), layer.pattern)
+                       .arg(layer.visible ? "visible" : "hidden")
+                       .arg(layer.selectable ? "selectable" : "locked")
+                       .arg(isActive ? "active" : "inactive");
+        }
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(out.trimmed().toUtf8().constData(), -1));
         return TCL_OK;
     }
 
@@ -448,18 +545,26 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
             return TCL_ERROR;
         }
 
+        for (auto it = m_sessionController.sessions().begin(); it != m_sessionController.sessions().end(); ++it) {
+            initializeSessionLayers(it.value());
+            applySessionToWindow(it.value());
+        }
+
         Tcl_SetObjResult(interp, Tcl_NewStringObj(
             QString("loaded %1 layers from %2").arg(m_layerManager.layers().size()).arg(path).toUtf8().constData(), -1));
         return TCL_OK;
     }
 
     if (subCommand == "active") {
+        if (!session) {
+            Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
         if (objc == 2) {
-            const QString activeName = m_layerManager.activeLayerName();
-            const QString activeType = m_layerManager.activeLayerType();
             Tcl_Obj* pair = Tcl_NewListObj(0, nullptr);
-            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(activeName.toUtf8().constData(), -1));
-            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(activeType.toUtf8().constData(), -1));
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(session->activeLayerName.toUtf8().constData(), -1));
+            Tcl_ListObjAppendElement(interp, pair, Tcl_NewStringObj(session->activeLayerType.toUtf8().constData(), -1));
             Tcl_SetObjResult(interp, pair);
             return TCL_OK;
         }
@@ -468,16 +573,26 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
             return TCL_ERROR;
         }
 
-        QString error;
         const QString layerName = QString::fromUtf8(Tcl_GetString(objv[2]));
         const QString layerType = QString::fromUtf8(Tcl_GetString(objv[3]));
-        if (!m_layerManager.setActiveLayer(layerName, layerType, error)) {
+        const int foundIndex = std::find_if(session->layers.cbegin(), session->layers.cend(),
+                                            [&layerName, &layerType](const LayerDefinition& layer) {
+                                                return layer.name.compare(layerName, Qt::CaseInsensitive) == 0
+                                                       && layer.type.compare(layerType, Qt::CaseInsensitive) == 0;
+                                            })
+                               - session->layers.cbegin();
+        if (foundIndex < 0 || foundIndex >= session->layers.size()) {
+            const QString error = QString("Unknown layer '%1' of type '%2'").arg(layerName, layerType);
             Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
             return TCL_ERROR;
         }
 
+        session->activeLayerName = session->layers[foundIndex].name;
+        session->activeLayerType = session->layers[foundIndex].type;
+        session->window->onActiveLayerChanged(session->activeLayerName, session->activeLayerType);
+
         Tcl_SetObjResult(interp, Tcl_NewStringObj(
-            QString("active layer: %1 (%2)").arg(m_layerManager.activeLayerName(), m_layerManager.activeLayerType())
+            QString("active layer: %1 (%2)").arg(session->activeLayerName, session->activeLayerType)
                 .toUtf8()
                 .constData(), -1));
         return TCL_OK;
@@ -503,11 +618,38 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
             return TCL_ERROR;
         }
 
-        QString error;
-        if (!m_layerManager.configureLayer(layerName, layerType, option, numeric == 1, error)) {
+        if (!session) {
+            Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        int index = -1;
+        for (int i = 0; i < session->layers.size(); ++i) {
+            if (session->layers[i].name.compare(layerName, Qt::CaseInsensitive) == 0
+                && session->layers[i].type.compare(layerType, Qt::CaseInsensitive) == 0) {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0) {
+            const QString error = QString("Unknown layer '%1' of type '%2'").arg(layerName, layerType);
             Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
             return TCL_ERROR;
         }
+
+        LayerDefinition& layer = session->layers[index];
+        if (option == "-visible") {
+            layer.visible = numeric == 1;
+        } else if (option == "-selectable") {
+            layer.selectable = numeric == 1;
+        } else {
+            const QString error = QString("Unknown option '%1' (expected -visible or -selectable)").arg(option);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
+
+        session->window->onLayerChanged(index, layer);
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj(
             QString("layer %1 (%2) updated: %3=%4").arg(layerName, layerType, option).arg(numeric).toUtf8().constData(), -1));
@@ -524,9 +666,15 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
         return TCL_ERROR;
     }
 
-    m_activeTool = QString::fromUtf8(Tcl_GetString(objv[2]));
-    m_editorWindow->onToolChanged(m_activeTool);
-    Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("tool: %1").arg(m_activeTool).toUtf8().constData(), -1));
+    EditorSession* session = effectiveSession();
+    if (!session) {
+        Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    session->activeTool = QString::fromUtf8(Tcl_GetString(objv[2]));
+    session->window->onToolChanged(session->activeTool);
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("tool: %1").arg(session->activeTool).toUtf8().constData(), -1));
     return TCL_OK;
 }
 
@@ -537,6 +685,11 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
     }
 
     const QString sub = QString::fromUtf8(Tcl_GetString(objv[1]));
+    EditorSession* session = effectiveSession();
+    if (!session) {
+        Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+        return TCL_ERROR;
+    }
 
     qint64 x = 0;
     qint64 y = 0;
@@ -552,19 +705,22 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         }
 
         // Rectangle tool starts preview only for left button and valid active layer.
-        if (button == 1 && m_activeTool == "rect" && !m_layerManager.activeLayerName().isEmpty()) {
-            m_rectInProgress = true;
+        if (button == 1 && session->activeTool == "rect" && !session->activeLayerName.isEmpty()) {
+            session->rectInProgress = true;
 
-            LayerDefinition active;
-            QString error;
-            if (!m_layerManager.activeLayerDefinition(active)) {
-                error = "No active layer";
+            auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
+                                   [session](const LayerDefinition& layer) {
+                                       return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
+                                              && layer.type.compare(session->activeLayerType, Qt::CaseInsensitive) == 0;
+                                   });
+            if (it == session->layers.cend()) {
+                const QString error = "No active layer";
                 Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
                 return TCL_ERROR;
             }
 
-            m_previewRectangle = {active.nameId, active.typeId, x, y, x, y};
-            m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
+            session->previewRectangle = {it->nameId, it->typeId, x, y, x, y};
+            session->window->onRectanglePreviewChanged(true, session->previewRectangle);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -578,10 +734,10 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (m_rectInProgress && leftDown == 1) {
-            m_previewRectangle.x2 = x;
-            m_previewRectangle.y2 = y;
-            m_editorWindow->onRectanglePreviewChanged(true, m_previewRectangle);
+        if (session->rectInProgress && leftDown == 1) {
+            session->previewRectangle.x2 = x;
+            session->previewRectangle.y2 = y;
+            session->window->onRectanglePreviewChanged(true, session->previewRectangle);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -595,12 +751,12 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (button == 1 && m_rectInProgress) {
-            m_previewRectangle.x2 = x;
-            m_previewRectangle.y2 = y;
-            m_editorWindow->onRectangleCommitted(m_previewRectangle);
-            m_editorWindow->onRectanglePreviewChanged(false, m_previewRectangle);
-            m_rectInProgress = false;
+        if (button == 1 && session->rectInProgress) {
+            session->previewRectangle.x2 = x;
+            session->previewRectangle.y2 = y;
+            session->window->onRectangleCommitted(session->previewRectangle);
+            session->window->onRectanglePreviewChanged(false, session->previewRectangle);
+            session->rectInProgress = false;
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -618,6 +774,11 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
     }
 
     const QString sub = QString::fromUtf8(Tcl_GetString(objv[1]));
+    EditorSession* session = effectiveSession();
+    if (!session) {
+        Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+        return TCL_ERROR;
+    }
 
     if (sub == "pan") {
         if (objc != 4) {
@@ -631,9 +792,9 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
             return TCL_ERROR;
         }
 
-        m_panX += dx;
-        m_panY += dy;
-        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        session->panX += dx;
+        session->panY += dy;
+        session->window->onViewChanged(session->zoom, session->panX, session->panY, session->gridSize);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
@@ -655,29 +816,29 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 
         // Incremental zoom with an upper bound to avoid huge transforms.
         const double factor = wheelDelta > 0 ? 1.15 : 1.0 / 1.15;
-        const double oldZoom = m_zoom;
-        m_zoom *= factor;
-        if (m_zoom < std::numeric_limits<double>::min()) {
-            m_zoom = std::numeric_limits<double>::min();
+        const double oldZoom = session->zoom;
+        session->zoom *= factor;
+        if (session->zoom < std::numeric_limits<double>::min()) {
+            session->zoom = std::numeric_limits<double>::min();
         }
-        if (m_zoom > 200.0) {
-            m_zoom = 200.0;
+        if (session->zoom > 200.0) {
+            session->zoom = 200.0;
         }
 
         // Anchor-preserving zoom: keep anchor point fixed on screen.
-        const double worldX = (anchorX - m_panX) / oldZoom;
-        const double worldY = (anchorY - m_panY) / oldZoom;
-        m_panX = anchorX - (worldX * m_zoom);
-        m_panY = anchorY - (worldY * m_zoom);
+        const double worldX = (anchorX - session->panX) / oldZoom;
+        const double worldY = (anchorY - session->panY) / oldZoom;
+        session->panX = anchorX - (worldX * session->zoom);
+        session->panY = anchorY - (worldY * session->zoom);
 
-        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        session->window->onViewChanged(session->zoom, session->panX, session->panY, session->gridSize);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
 
     if (sub == "grid") {
         if (objc == 2) {
-            Tcl_SetObjResult(interp, Tcl_NewDoubleObj(m_gridSize));
+            Tcl_SetObjResult(interp, Tcl_NewDoubleObj(session->gridSize));
             return TCL_OK;
         }
 
@@ -696,8 +857,8 @@ int TclConsoleWindow::handleViewCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
             return TCL_ERROR;
         }
 
-        m_gridSize = requestedGridSize;
-        m_editorWindow->onViewChanged(m_zoom, m_panX, m_panY, m_gridSize);
+        session->gridSize = requestedGridSize;
+        session->window->onViewChanged(session->zoom, session->panX, session->panY, session->gridSize);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }

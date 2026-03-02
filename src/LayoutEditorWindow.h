@@ -47,7 +47,7 @@ public slots:
 
 signals:
     // Single dispatch point for UI->Tcl command routing.
-    void commandRequested(const QString& command);
+    void commandRequested(const QString& command, bool requestActivation);
 
 private slots:
     // Table interaction handlers.
