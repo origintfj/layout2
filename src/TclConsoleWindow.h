@@ -81,6 +81,7 @@ private:
     void applySessionToWindow(EditorSession& session);
     int createEditorSession(bool activate);
     void setActiveEditor(int editorId);
+    void refreshEditorWindowTitles();
 
     QPlainTextEdit* m_output;
     QLineEdit* m_input;

@@ -2,6 +2,7 @@
 #include "LayoutSceneModel.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <algorithm>
 #include <QFrame>
 #include <QHash>
@@ -19,6 +20,7 @@
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QWidget>
 #include <QtGlobal>
 #include <cmath>
 #include <memory>
@@ -473,7 +475,7 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
       m_canvas(new LayoutCanvas()),
       m_statusLabel(new QLabel()),
       m_rootCell(std::make_unique<LayoutSceneNode>()) {
-    setWindowTitle("Layout Editor");
+    refreshWindowTitle();
     resize(1100, 700);
 
     auto* central = new QWidget(this);
@@ -535,19 +537,35 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
-    m_layerTable->installEventFilter(this);
+    qApp->installEventFilter(this);
 
     m_canvas->setRootCell(m_rootCell.get());
     refreshStatusLabel();
 }
 
-LayoutEditorWindow::~LayoutEditorWindow() = default;
+LayoutEditorWindow::~LayoutEditorWindow() {
+    qApp->removeEventFilter(this);
+}
 
 QSize LayoutEditorWindow::canvasViewportSize() const {
     return m_canvas->size();
 }
 
+void LayoutEditorWindow::setEditorIdentity(const int editorId, const bool isActive) {
+    m_editorId = editorId;
+    m_isActiveEditor = isActive;
+    refreshWindowTitle();
+}
+
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonPress) {
+        if (auto* widget = qobject_cast<QWidget*>(watched)) {
+            if (widget->window() == this) {
+                emit activationRequested();
+            }
+        }
+    }
+
     if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         const QString keySpec = keySpecFromEvent(keyEvent);
@@ -703,6 +721,12 @@ void LayoutEditorWindow::refreshStatusLabel() {
                                    : "X: -- Y: --";
     m_statusLabel->setText(QString("Active layer: %1 | Tool: %2 | Cursor: %3")
                                .arg(layerPart, m_activeTool, cursorPart));
+}
+
+void LayoutEditorWindow::refreshWindowTitle() {
+    const QString editorPart = m_editorId > 0 ? QString::number(m_editorId) : QString("?");
+    const QString activeSuffix = m_isActiveEditor ? QString(" [active]") : QString();
+    setWindowTitle(QString("Layout Editor %1%2").arg(editorPart, activeSuffix));
 }
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {

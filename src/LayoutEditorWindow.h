@@ -32,6 +32,8 @@ public:
     QSize canvasViewportSize() const;
 
 public slots:
+    void setEditorIdentity(int editorId, bool isActive);
+
     // Model-to-view refresh hooks.
     void setLayers(const QVector<LayerDefinition>& layers);
     void onLayerChanged(int index, const LayerDefinition& layer);
@@ -48,6 +50,7 @@ public slots:
 signals:
     // Single dispatch point for UI->Tcl command routing.
     void commandRequested(const QString& command, bool requestActivation);
+    void activationRequested();
 
 private slots:
     // Table interaction handlers.
@@ -65,6 +68,7 @@ private:
     void applyLayerToRow(int row, const LayerDefinition& layer);
     QTableWidgetItem* makeReadOnlyItem(const QString& text);
     void refreshStatusLabel();
+    void refreshWindowTitle();
 
     QTableWidget* m_layerTable;
     LayoutCanvas* m_canvas;
@@ -78,6 +82,8 @@ private:
     qint64 m_mouseWorldY{0};
     bool m_mouseInsideCanvas{false};
     bool m_internalUpdate{false}; // Guard to suppress feedback loops.
+    int m_editorId{0};
+    bool m_isActiveEditor{false};
 
     // Root scene container for committed geometry.
     std::unique_ptr<LayoutSceneNode> m_rootCell;

@@ -255,8 +255,14 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
                 executeEditorCommand(editorId, command, requestActivation);
             });
 
+    connect(window, &LayoutEditorWindow::activationRequested,
+            this, [this, editorId]() {
+                setActiveEditor(editorId);
+            });
+
     connect(window, &QObject::destroyed, this, [this, editorId]() {
         m_sessionController.removeSession(editorId);
+        refreshEditorWindowTitles();
     });
 
     applySessionToWindow(*session);
@@ -266,6 +272,8 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
 
     if (activate) {
         setActiveEditor(editorId);
+    } else {
+        refreshEditorWindowTitles();
     }
 
     return editorId;
@@ -273,6 +281,18 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
 
 void TclConsoleWindow::setActiveEditor(const int editorId) {
     m_sessionController.setActiveEditor(editorId);
+    refreshEditorWindowTitles();
+}
+
+void TclConsoleWindow::refreshEditorWindowTitles() {
+    const int activeEditorId = m_sessionController.activeEditorId();
+    for (auto it = m_sessionController.sessions().begin(); it != m_sessionController.sessions().end(); ++it) {
+        if (!it.value().window) {
+            continue;
+        }
+
+        it.value().window->setEditorIdentity(it.key(), it.key() == activeEditorId);
+    }
 }
 
 bool TclConsoleWindow::shouldSuppressTranscriptCommand(const QString& command) const {
