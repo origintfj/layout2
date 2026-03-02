@@ -2,6 +2,7 @@
 #include "LayoutSceneModel.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <algorithm>
 #include <QFrame>
 #include <QHash>
@@ -19,6 +20,7 @@
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QWidget>
 #include <QtGlobal>
 #include <cmath>
 #include <memory>
@@ -535,14 +537,15 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
-    m_layerTable->installEventFilter(this);
-    m_canvas->installEventFilter(this);
+    qApp->installEventFilter(this);
 
     m_canvas->setRootCell(m_rootCell.get());
     refreshStatusLabel();
 }
 
-LayoutEditorWindow::~LayoutEditorWindow() = default;
+LayoutEditorWindow::~LayoutEditorWindow() {
+    qApp->removeEventFilter(this);
+}
 
 QSize LayoutEditorWindow::canvasViewportSize() const {
     return m_canvas->size();
@@ -555,8 +558,12 @@ void LayoutEditorWindow::setEditorIdentity(const int editorId, const bool isActi
 }
 
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
-    if ((watched == m_layerTable || watched == m_canvas) && event->type() == QEvent::MouseButtonPress) {
-        emit activationRequested();
+    if (event->type() == QEvent::MouseButtonPress) {
+        if (auto* widget = qobject_cast<QWidget*>(watched)) {
+            if (widget->window() == this) {
+                emit activationRequested();
+            }
+        }
     }
 
     if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
