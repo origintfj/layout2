@@ -194,7 +194,8 @@ int TclConsoleWindow::evaluateCommandForEditor(const QString& command,
     const int previousCommandEditorId = m_sessionController.commandEditorId();
     m_sessionController.setCommandEditorId(editorId);
     if (requestActivation && editorId > 0) {
-        setActiveEditor(editorId);
+        const QString activateCommand = QString("app editor active %1").arg(editorId);
+        (void)evaluateCommand(activateCommand, true, false, false);
     }
 
     const int rc = evaluateCommand(command, echoCommand, echoResult, echoErrorLine);
@@ -405,8 +406,8 @@ int TclConsoleWindow::handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_
 }
 
 int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
-    if (objc != 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: app <exit|layout_editor>"), TCL_STATIC);
+    if (objc < 2) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: app <exit|layout_editor|editor ...>"), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -419,6 +420,11 @@ int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* co
     }
 
     if (subCommand == "layout_editor") {
+        if (objc != 2) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: app layout_editor"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
         const int editorId = createEditorSession(true);
         EditorSession* session = sessionById(editorId);
         if (session && session->window) {
@@ -432,6 +438,44 @@ int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* co
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("layout editor %1 shown").arg(editorId).toUtf8().constData(), -1));
+        return TCL_OK;
+    }
+
+    if (subCommand == "editor") {
+        if (objc < 3) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: app editor active ?editorId?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        const QString editorSubCommand = QString::fromUtf8(Tcl_GetString(objv[2]));
+        if (editorSubCommand != "active") {
+            Tcl_SetResult(interp, const_cast<char*>("unknown app editor subcommand"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (objc == 3) {
+            Tcl_SetObjResult(interp, Tcl_NewIntObj(m_sessionController.activeEditorId()));
+            return TCL_OK;
+        }
+
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: app editor active ?editorId?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        int editorId = 0;
+        if (Tcl_GetIntFromObj(interp, objv[3], &editorId) != TCL_OK) {
+            Tcl_SetResult(interp, const_cast<char*>("invalid editorId"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (!sessionById(editorId)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(QString("unknown editorId: %1").arg(editorId).toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
+
+        setActiveEditor(editorId);
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(editorId));
         return TCL_OK;
     }
 

@@ -111,10 +111,14 @@ transcript filter clear
 
 ```tcl
 app layout_editor
+app editor active
+app editor active <editorId>
 app exit
 ```
 
-- `app layout_editor` shows/focuses the editor window and recenters world origin in view.
+- `app layout_editor` opens a new editor window, makes it active, and recenters world origin in view.
+- `app editor active` returns the currently active editor id.
+- `app editor active <editorId>` sets the active editor id (must reference an existing editor).
 - `app exit` closes the application.
 
 ## File and script formats
