@@ -217,9 +217,10 @@ sudo apt install -y build-essential cmake tcl-dev qtbase5-dev
 # sudo apt install -y qt6-base-dev
 ```
 
-> Note: `layout2` uses the Tcl C API only, not Tk. If you previously
-> configured with an older build directory and saw `Could NOT find TCLTK
-> (missing: TK_INCLUDE_PATH)`, clear the build directory and reconfigure:
+> Note: some CMake versions can still emit `Could NOT find TCLTK (missing:
+> TK_INCLUDE_PATH)` even though this project only needs the Tcl C API. The
+> build scripts include a fallback Tcl detection path, but if you hit this on
+> an already-configured tree, clear the CMake cache and reconfigure:
 >
 > ```bash
 > rm -rf build
