@@ -26,15 +26,46 @@ void LayoutSceneNode::addChild(std::shared_ptr<LayoutSceneNode> child) {
 }
 
 void LayoutSceneNode::collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const {
-    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+    QVector<const LayoutObjectModel*> objects;
+    collectObjects(objects);
+
+    for (const LayoutObjectModel* object : objects) {
         if (const DrawnRectangle* rectangle = object->asRectangle()) {
             outRectangles.push_back(rectangle);
         }
     }
+}
+
+void LayoutSceneNode::collectObjects(QVector<const LayoutObjectModel*>& outObjects) const {
+    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+        outObjects.push_back(object.get());
+    }
 
     for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-        child->collectRectangles(outRectangles);
+        child->collectObjects(outObjects);
     }
+}
+
+QVector<int> LayoutSceneNode::matchingObjectIndicesAt(
+    qint64 x,
+    qint64 y,
+    const std::function<bool(const LayoutObjectModel&)>& predicate) const {
+    QVector<int> matches;
+    QVector<const LayoutObjectModel*> objects;
+    collectObjects(objects);
+
+    for (int i = objects.size() - 1; i >= 0; --i) {
+        const LayoutObjectModel* object = objects[i];
+        if (!object || !predicate(*object)) {
+            continue;
+        }
+
+        if (object->containsPoint(x, y)) {
+            matches.push_back(i);
+        }
+    }
+
+    return matches;
 }
 
 bool LayoutSceneNode::removeRectangleAt(int rectangleIndex) {

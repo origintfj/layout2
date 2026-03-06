@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QVector>
+#include <functional>
 #include <memory>
 
 #include "LayoutGeometry.h"
@@ -33,6 +34,10 @@ public:
     void addChild(std::shared_ptr<LayoutSceneNode> child);
 
     void collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const;
+    void collectObjects(QVector<const LayoutObjectModel*>& outObjects) const;
+    QVector<int> matchingObjectIndicesAt(qint64 x,
+                                         qint64 y,
+                                         const std::function<bool(const LayoutObjectModel&)>& predicate) const;
     bool removeRectangleAt(int rectangleIndex);
 
 private:

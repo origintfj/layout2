@@ -364,12 +364,9 @@ private:
         }
     }
 
-    bool isSelectableRectangleAt(const DrawnRectangle& rectangle, qint64 x, qint64 y) const {
+    bool isSelectableRectangle(const DrawnRectangle& rectangle) const {
         const LayerDefinition* layer = layerForRectangle(rectangle);
-        if (!layer || !layer->visible || !layer->selectable) {
-            return false;
-        }
-        return RectangleObjectModel(rectangle).containsPoint(x, y);
+        return layer && layer->visible && layer->selectable;
     }
 
     QVector<const DrawnRectangle*> flattenedRectangles() const {
@@ -382,26 +379,66 @@ private:
         return rectangles;
     }
 
-    int hoveredSelectableIndexAt(qint64 x, qint64 y) const {
-        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
-        for (int i = rectangles.size() - 1; i >= 0; --i) {
-            if (isSelectableRectangleAt(*rectangles[i], x, y)) {
-                return i;
+    QVector<int> rectangleIndexByObjectIndex() const {
+        QVector<int> indexByObject;
+        if (!m_rootCell) {
+            return indexByObject;
+        }
+
+        QVector<const LayoutObjectModel*> objects;
+        m_rootCell->collectObjects(objects);
+        indexByObject.fill(-1, objects.size());
+
+        int rectangleIndex = 0;
+        for (int i = 0; i < objects.size(); ++i) {
+            if (objects[i] && objects[i]->asRectangle()) {
+                indexByObject[i] = rectangleIndex;
+                ++rectangleIndex;
             }
         }
 
-        return -1;
+        return indexByObject;
+    }
+
+    QVector<int> selectableRectangleCandidatesAt(qint64 x, qint64 y) const {
+        QVector<int> candidates;
+        if (!m_rootCell) {
+            return candidates;
+        }
+
+        const QVector<int> objectMatches = m_rootCell->matchingObjectIndicesAt(
+            x,
+            y,
+            [this](const LayoutObjectModel& object) {
+                const DrawnRectangle* rectangle = object.asRectangle();
+                return rectangle && isSelectableRectangle(*rectangle);
+            });
+        if (objectMatches.isEmpty()) {
+            return candidates;
+        }
+
+        const QVector<int> rectangleByObject = rectangleIndexByObjectIndex();
+        for (int objectIndex : objectMatches) {
+            if (objectIndex < 0 || objectIndex >= rectangleByObject.size()) {
+                continue;
+            }
+
+            const int rectangleIndex = rectangleByObject[objectIndex];
+            if (rectangleIndex >= 0) {
+                candidates.push_back(rectangleIndex);
+            }
+        }
+
+        return candidates;
+    }
+
+    int hoveredSelectableIndexAt(qint64 x, qint64 y) const {
+        const QVector<int> candidates = selectableRectangleCandidatesAt(x, y);
+        return candidates.isEmpty() ? -1 : candidates.front();
     }
 
     void handleSelectionClick(qint64 x, qint64 y) {
-        QVector<int> candidates;
-        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
-        for (int i = rectangles.size() - 1; i >= 0; --i) {
-            if (isSelectableRectangleAt(*rectangles[i], x, y)) {
-                candidates.push_back(i);
-            }
-        }
-
+        const QVector<int> candidates = selectableRectangleCandidatesAt(x, y);
         if (candidates.isEmpty()) {
             m_selectedIndex = -1;
             m_lastSelectionCandidates.clear();
@@ -438,8 +475,7 @@ private:
         }
 
         const DrawnRectangle& rectangle = *rectangles[m_selectedIndex];
-        const LayerDefinition* layer = layerForRectangle(rectangle);
-        if (!layer || !layer->visible || !layer->selectable) {
+        if (!isSelectableRectangle(rectangle)) {
             m_selectedIndex = -1;
         }
     }
@@ -452,8 +488,7 @@ private:
         }
 
         const DrawnRectangle& rectangle = *rectangles[m_hoveredIndex];
-        const LayerDefinition* layer = layerForRectangle(rectangle);
-        if (!layer || !layer->visible || !layer->selectable) {
+        if (!isSelectableRectangle(rectangle)) {
             m_hoveredIndex = -1;
         }
     }
