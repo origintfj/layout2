@@ -108,6 +108,7 @@ public:
 
     void setRootCell(const LayoutSceneNode* rootCell) {
         m_rootCell = rootCell;
+        validateHover();
         update();
     }
 
@@ -129,11 +130,16 @@ public:
         m_layers = layers;
         rebuildLayerLookup();
         validateSelection();
+        validateHover();
         update();
     }
 
     void setActiveTool(const QString& toolName) {
         m_activeTool = toolName;
+        if (m_activeTool != "select") {
+            m_hoveredIndex = -1;
+        }
+        update();
     }
 
 signals:
@@ -158,6 +164,10 @@ protected:
                 continue;
             }
             drawRectangle(painter, r, false, i == m_selectedIndex);
+        }
+
+        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < rectangles.size()) {
+            drawHoverOutline(painter, *rectangles[m_hoveredIndex]);
         }
 
         // Draw rubber-band preview on top.
@@ -220,6 +230,12 @@ protected:
         const qint64 worldY = static_cast<qint64>(world.y());
         emit mouseWorldPositionChanged(worldX, worldY, true);
         const bool leftDown = event->buttons() & Qt::LeftButton;
+
+        if (m_activeTool == "select") {
+            m_hoveredIndex = hoveredSelectableIndexAt(worldX, worldY);
+            update();
+        }
+
         emit commandRequested(QString("canvas move %1 %2 %3")
                                   .arg(worldX)
                                   .arg(worldY)
@@ -241,6 +257,10 @@ protected:
 
     void leaveEvent(QEvent* event) override {
         emit mouseWorldPositionChanged(0, 0, false);
+        if (m_hoveredIndex != -1) {
+            m_hoveredIndex = -1;
+            update();
+        }
         QWidget::leaveEvent(event);
     }
 
@@ -311,6 +331,16 @@ private:
         painter.drawRect(rect);
     }
 
+    void drawHoverOutline(QPainter& painter, const DrawnRectangle& rectangle) {
+        QPointF p1 = worldToScreen(rectangle.x1, rectangle.y1);
+        QPointF p2 = worldToScreen(rectangle.x2, rectangle.y2);
+        QRectF rect = QRectF(p1, p2).normalized();
+
+        painter.setPen(QPen(QColor("#ffd400"), 1, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(rect);
+    }
+
     const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
         const auto it = m_layerIndexByCode.constFind(layerCodeKey(rectangle.layerNameId, rectangle.layerTypeId));
         if (it == m_layerIndexByCode.cend()) {
@@ -350,6 +380,17 @@ private:
 
         m_rootCell->collectRectangles(rectangles);
         return rectangles;
+    }
+
+    int hoveredSelectableIndexAt(qint64 x, qint64 y) const {
+        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
+        for (int i = rectangles.size() - 1; i >= 0; --i) {
+            if (isSelectableRectangleAt(*rectangles[i], x, y)) {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     void handleSelectionClick(qint64 x, qint64 y) {
@@ -400,6 +441,20 @@ private:
         const LayerDefinition* layer = layerForRectangle(rectangle);
         if (!layer || !layer->visible || !layer->selectable) {
             m_selectedIndex = -1;
+        }
+    }
+
+    void validateHover() {
+        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
+        if (m_hoveredIndex < 0 || m_hoveredIndex >= rectangles.size()) {
+            m_hoveredIndex = -1;
+            return;
+        }
+
+        const DrawnRectangle& rectangle = *rectangles[m_hoveredIndex];
+        const LayerDefinition* layer = layerForRectangle(rectangle);
+        if (!layer || !layer->visible || !layer->selectable) {
+            m_hoveredIndex = -1;
         }
     }
 
@@ -455,6 +510,7 @@ private:
     QString m_activeTool{"none"};
 
     int m_selectedIndex{-1};
+    int m_hoveredIndex{-1};
     QVector<int> m_lastSelectionCandidates;
     QPointF m_lastSelectionPoint;
     bool m_hasSelectionPoint{false};
