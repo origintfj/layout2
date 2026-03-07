@@ -191,30 +191,3 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
 
     return false;
 }
-
-bool LayoutSceneNode::removeRectangleAt(int rectangleIndex) {
-    int mutableIndex = rectangleIndex;
-    return removeRectangleAtRecursive(mutableIndex);
-}
-
-bool LayoutSceneNode::removeRectangleAtRecursive(int& rectangleIndex) {
-    for (int i = 0; i < m_objects.size(); ++i) {
-        if (!m_objects[i]->asRectangle()) {
-            continue;
-        }
-
-        if (rectangleIndex == 0) {
-            m_objects.removeAt(i);
-            return true;
-        }
-        --rectangleIndex;
-    }
-
-    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-        if (child->removeRectangleAtRecursive(rectangleIndex)) {
-            return true;
-        }
-    }
-
-    return false;
-}

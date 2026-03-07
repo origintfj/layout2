@@ -52,14 +52,16 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
         return QBrush(baseColor, Qt::SolidPattern);
     }
 
-    QPixmap pixmap(8, 8);
+    const int patternMag = 2;
+
+    QPixmap pixmap(8 * patternMag, 8 * patternMag);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setPen(baseColor);
 
-    for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-            const int bitIndex = (y * 8) + x;
+    for (int y = 0; y < (8 * patternMag); ++y) {
+        for (int x = 0; x < (8 * patternMag); ++x) {
+            const int bitIndex = ((y / patternMag) * 8) + (x / patternMag);
             if ((patternValue >> bitIndex) & 0x1ULL) {
                 painter.drawPoint(x, y);
             }
@@ -360,7 +362,7 @@ private:
     }
 
     void drawHoverOutline(QPainter& painter, const QVector<WorldLineSegment>& segments) {
-        painter.setPen(QPen(QColor("#ffd400"), 1, Qt::DashLine));
+        painter.setPen(QPen(QColor("#ffd400"), 2, Qt::DashLine));
         painter.setBrush(Qt::NoBrush);
 
         for (const WorldLineSegment& segment : segments) {
