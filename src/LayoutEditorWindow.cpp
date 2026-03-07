@@ -441,6 +441,7 @@ private:
         const QVector<int> candidates = selectableRectangleCandidatesAt(x, y);
         if (candidates.isEmpty()) {
             m_selectedIndex = -1;
+            m_hoveredIndex = -1;
             m_lastSelectionCandidates.clear();
             m_lastSelectionPoint = QPointF();
             update();
@@ -453,12 +454,16 @@ private:
 
         if (!sameCandidates) {
             m_selectedIndex = candidates.front();
+            m_hoveredIndex = candidates.size() > 1 ? candidates[1] : candidates.front();
         } else {
             int currentCandidate = candidates.indexOf(m_selectedIndex);
             if (currentCandidate < 0) {
                 currentCandidate = 0;
             }
-            m_selectedIndex = candidates[(currentCandidate + 1) % candidates.size()];
+
+            const int nextSelectedCandidate = (currentCandidate + 1) % candidates.size();
+            m_selectedIndex = candidates[nextSelectedCandidate];
+            m_hoveredIndex = candidates[(nextSelectedCandidate + 1) % candidates.size()];
         }
 
         m_lastSelectionCandidates = candidates;
