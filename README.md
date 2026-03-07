@@ -217,6 +217,16 @@ sudo apt install -y build-essential cmake tcl-dev qtbase5-dev
 # sudo apt install -y qt6-base-dev
 ```
 
+> Note: some CMake versions can still emit `Could NOT find TCLTK (missing:
+> TK_INCLUDE_PATH)` even though this project only needs the Tcl C API. The
+> build scripts include a fallback Tcl detection path, but if you hit this on
+> an already-configured tree, clear the CMake cache and reconfigure:
+>
+> ```bash
+> rm -rf build
+> cmake -S . -B build
+> ```
+
 ## Build
 
 ```bash
