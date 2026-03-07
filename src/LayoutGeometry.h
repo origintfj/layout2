@@ -13,3 +13,11 @@ struct DrawnRectangle {
     qint64 x2;
     qint64 y2;
 };
+
+// WorldLineSegment stores one line segment in world coordinates.
+struct WorldLineSegment {
+    qint64 x1;
+    qint64 y1;
+    qint64 x2;
+    qint64 y2;
+};

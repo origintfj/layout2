@@ -17,6 +17,18 @@ const DrawnRectangle* RectangleObjectModel::asRectangle() const {
     return &m_rectangle;
 }
 
+void RectangleObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const {
+    const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
+    const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
+    const qint64 minY = std::min(m_rectangle.y1, m_rectangle.y2);
+    const qint64 maxY = std::max(m_rectangle.y1, m_rectangle.y2);
+
+    outSegments.push_back(WorldLineSegment{minX, minY, maxX, minY});
+    outSegments.push_back(WorldLineSegment{maxX, minY, maxX, maxY});
+    outSegments.push_back(WorldLineSegment{maxX, maxY, minX, maxY});
+    outSegments.push_back(WorldLineSegment{minX, maxY, minX, minY});
+}
+
 void LayoutSceneNode::addObject(std::shared_ptr<LayoutObjectModel> object) {
     m_objects.push_back(std::move(object));
 }
@@ -66,6 +78,36 @@ QVector<int> LayoutSceneNode::matchingObjectIndicesAt(
     }
 
     return matches;
+}
+
+bool LayoutSceneNode::collectRectangleOutlineSegments(int rectangleIndex,
+                                                      QVector<WorldLineSegment>& outSegments) const {
+    int mutableIndex = rectangleIndex;
+    return collectRectangleOutlineSegmentsRecursive(mutableIndex, outSegments);
+}
+
+bool LayoutSceneNode::collectRectangleOutlineSegmentsRecursive(
+    int& rectangleIndex,
+    QVector<WorldLineSegment>& outSegments) const {
+    for (int i = 0; i < m_objects.size(); ++i) {
+        if (!m_objects[i]->asRectangle()) {
+            continue;
+        }
+
+        if (rectangleIndex == 0) {
+            m_objects[i]->appendOutlineSegments(outSegments);
+            return true;
+        }
+        --rectangleIndex;
+    }
+
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        if (child->collectRectangleOutlineSegmentsRecursive(rectangleIndex, outSegments)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool LayoutSceneNode::removeRectangleAt(int rectangleIndex) {

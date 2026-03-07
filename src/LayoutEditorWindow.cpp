@@ -166,8 +166,11 @@ protected:
             drawRectangle(painter, r, false, i == m_selectedIndex);
         }
 
-        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < rectangles.size()) {
-            drawHoverOutline(painter, *rectangles[m_hoveredIndex]);
+        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < rectangles.size() && m_rootCell) {
+            QVector<WorldLineSegment> previewSegments;
+            if (m_rootCell->collectRectangleOutlineSegments(m_hoveredIndex, previewSegments)) {
+                drawHoverOutline(painter, previewSegments);
+            }
         }
 
         // Draw rubber-band preview on top.
@@ -331,14 +334,15 @@ private:
         painter.drawRect(rect);
     }
 
-    void drawHoverOutline(QPainter& painter, const DrawnRectangle& rectangle) {
-        QPointF p1 = worldToScreen(rectangle.x1, rectangle.y1);
-        QPointF p2 = worldToScreen(rectangle.x2, rectangle.y2);
-        QRectF rect = QRectF(p1, p2).normalized();
-
+    void drawHoverOutline(QPainter& painter, const QVector<WorldLineSegment>& segments) {
         painter.setPen(QPen(QColor("#ffd400"), 1, Qt::DashLine));
         painter.setBrush(Qt::NoBrush);
-        painter.drawRect(rect);
+
+        for (const WorldLineSegment& segment : segments) {
+            const QPointF p1 = worldToScreen(segment.x1, segment.y1);
+            const QPointF p2 = worldToScreen(segment.x2, segment.y2);
+            painter.drawLine(p1, p2);
+        }
     }
 
     const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {

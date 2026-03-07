@@ -14,6 +14,7 @@ public:
 
     virtual bool containsPoint(qint64 x, qint64 y) const = 0;
     virtual const DrawnRectangle* asRectangle() const { return nullptr; }
+    virtual void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const = 0;
 };
 
 class RectangleObjectModel final : public LayoutObjectModel {
@@ -22,6 +23,7 @@ public:
 
     bool containsPoint(qint64 x, qint64 y) const override;
     const DrawnRectangle* asRectangle() const override;
+    void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const override;
 
 private:
     DrawnRectangle m_rectangle;
@@ -38,9 +40,12 @@ public:
     QVector<int> matchingObjectIndicesAt(qint64 x,
                                          qint64 y,
                                          const std::function<bool(const LayoutObjectModel&)>& predicate) const;
+    bool collectRectangleOutlineSegments(int rectangleIndex, QVector<WorldLineSegment>& outSegments) const;
     bool removeRectangleAt(int rectangleIndex);
 
 private:
+    bool collectRectangleOutlineSegmentsRecursive(int& rectangleIndex,
+                                                  QVector<WorldLineSegment>& outSegments) const;
     bool removeRectangleAtRecursive(int& rectangleIndex);
 
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
