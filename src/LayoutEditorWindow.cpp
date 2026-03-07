@@ -15,6 +15,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QPolygonF>
 #include <QSize>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -155,18 +156,13 @@ protected:
         painter.fillRect(rect(), QColor("#000000"));
         drawGrid(painter);
 
-        // Draw committed geometry first.
-        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
-        for (int i = 0; i < rectangles.size(); ++i) {
-            const DrawnRectangle& r = *rectangles[i];
-            const LayerDefinition* layer = layerForRectangle(r);
-            if (!layer || !layer->visible) {
-                continue;
-            }
-            drawRectangle(painter, r, false, i == m_selectedIndex);
+        // Draw committed geometry first from model-provided primitives.
+        const QVector<SceneRenderPrimitive> primitives = flattenedRenderPrimitives();
+        for (int i = 0; i < primitives.size(); ++i) {
+            drawPrimitive(painter, primitives[i], i == m_selectedIndex);
         }
 
-        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < rectangles.size() && m_rootCell) {
+        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < primitives.size() && m_rootCell) {
             QVector<WorldLineSegment> previewSegments;
             if (m_rootCell->collectRectangleOutlineSegments(m_hoveredIndex, previewSegments)) {
                 drawHoverOutline(painter, previewSegments);
@@ -334,6 +330,36 @@ private:
         painter.drawRect(rect);
     }
 
+    void drawPrimitive(QPainter& painter, const SceneRenderPrimitive& primitive, bool selected) {
+        const LayerDefinition* layer = layerForPrimitive(primitive);
+        if (!layer || !layer->visible || primitive.polygonVertices.isEmpty()) {
+            return;
+        }
+
+        QPolygonF polygon;
+        polygon.reserve(primitive.polygonVertices.size());
+        for (const WorldPoint& vertex : primitive.polygonVertices) {
+            polygon.push_back(worldToScreen(vertex.x, vertex.y));
+        }
+
+        QColor fillColor = layer->color;
+        if (selected) {
+            fillColor = fillColor.lighter(130);
+        }
+        fillColor.setAlpha(140);
+
+        QColor outlineColor = layer->color;
+        outlineColor.setAlpha(220);
+        if (selected) {
+            outlineColor = QColor("#ffffff");
+            outlineColor.setAlpha(255);
+        }
+
+        painter.setPen(QPen(outlineColor, 1, Qt::SolidLine));
+        painter.setBrush(patternBrushFor(fillColor, layer->pattern));
+        painter.drawPolygon(polygon);
+    }
+
     void drawHoverOutline(QPainter& painter, const QVector<WorldLineSegment>& segments) {
         painter.setPen(QPen(QColor("#ffd400"), 1, Qt::DashLine));
         painter.setBrush(Qt::NoBrush);
@@ -343,6 +369,20 @@ private:
             const QPointF p2 = worldToScreen(segment.x2, segment.y2);
             painter.drawLine(p1, p2);
         }
+    }
+
+    const LayerDefinition* layerForPrimitive(const SceneRenderPrimitive& primitive) const {
+        const auto it = m_layerIndexByCode.constFind(layerCodeKey(primitive.layerNameId, primitive.layerTypeId));
+        if (it == m_layerIndexByCode.cend()) {
+            return nullptr;
+        }
+
+        const int index = it.value();
+        if (index < 0 || index >= m_layers.size()) {
+            return nullptr;
+        }
+
+        return &m_layers[index];
     }
 
     const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
@@ -371,6 +411,16 @@ private:
     bool isSelectableRectangle(const DrawnRectangle& rectangle) const {
         const LayerDefinition* layer = layerForRectangle(rectangle);
         return layer && layer->visible && layer->selectable;
+    }
+
+    QVector<SceneRenderPrimitive> flattenedRenderPrimitives() const {
+        QVector<SceneRenderPrimitive> primitives;
+        if (!m_rootCell) {
+            return primitives;
+        }
+
+        m_rootCell->collectRenderPrimitives(primitives);
+        return primitives;
     }
 
     QVector<const DrawnRectangle*> flattenedRectangles() const {

@@ -15,6 +15,7 @@ public:
     virtual bool containsPoint(qint64 x, qint64 y) const = 0;
     virtual const DrawnRectangle* asRectangle() const { return nullptr; }
     virtual void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const = 0;
+    virtual void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const = 0;
 };
 
 class RectangleObjectModel final : public LayoutObjectModel {
@@ -24,6 +25,7 @@ public:
     bool containsPoint(qint64 x, qint64 y) const override;
     const DrawnRectangle* asRectangle() const override;
     void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const override;
+    void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const override;
 
 private:
     DrawnRectangle m_rectangle;
@@ -36,6 +38,7 @@ public:
     void addChild(std::shared_ptr<LayoutSceneNode> child);
 
     void collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const;
+    void collectRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const;
     void collectObjects(QVector<const LayoutObjectModel*>& outObjects) const;
     QVector<int> matchingObjectIndicesAt(qint64 x,
                                          qint64 y,

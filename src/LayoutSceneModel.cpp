@@ -1,6 +1,7 @@
 #include "LayoutSceneModel.h"
 
 #include <algorithm>
+#include <utility>
 
 RectangleObjectModel::RectangleObjectModel(const DrawnRectangle& rectangle)
     : m_rectangle(rectangle) {}
@@ -29,6 +30,24 @@ void RectangleObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outS
     outSegments.push_back(WorldLineSegment{minX, maxY, minX, minY});
 }
 
+void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const {
+    const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
+    const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
+    const qint64 minY = std::min(m_rectangle.y1, m_rectangle.y2);
+    const qint64 maxY = std::max(m_rectangle.y1, m_rectangle.y2);
+
+    SceneRenderPrimitive primitive;
+    primitive.layerNameId = m_rectangle.layerNameId;
+    primitive.layerTypeId = m_rectangle.layerTypeId;
+    primitive.polygonVertices = {
+        WorldPoint{minX, minY},
+        WorldPoint{maxX, minY},
+        WorldPoint{maxX, maxY},
+        WorldPoint{minX, maxY}
+    };
+    outPrimitives.push_back(std::move(primitive));
+}
+
 void LayoutSceneNode::addObject(std::shared_ptr<LayoutObjectModel> object) {
     m_objects.push_back(std::move(object));
 }
@@ -45,6 +64,19 @@ void LayoutSceneNode::collectRectangles(QVector<const DrawnRectangle*>& outRecta
         if (const DrawnRectangle* rectangle = object->asRectangle()) {
             outRectangles.push_back(rectangle);
         }
+    }
+}
+
+
+void LayoutSceneNode::collectRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const {
+    QVector<const LayoutObjectModel*> objects;
+    collectObjects(objects);
+
+    for (const LayoutObjectModel* object : objects) {
+        if (!object) {
+            continue;
+        }
+        object->appendRenderPrimitives(outPrimitives);
     }
 }
 

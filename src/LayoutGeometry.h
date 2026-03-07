@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtGlobal>
+#include <QVector>
 
 // DrawnRectangle stores one committed or preview rectangle in world coordinates.
 //
@@ -20,4 +21,16 @@ struct WorldLineSegment {
     qint64 y1;
     qint64 x2;
     qint64 y2;
+};
+
+struct WorldPoint {
+    qint64 x;
+    qint64 y;
+};
+
+// SceneRenderPrimitive describes one drawable scene primitive in world space.
+struct SceneRenderPrimitive {
+    quint32 layerNameId;
+    quint32 layerTypeId;
+    QVector<WorldPoint> polygonVertices;
 };
