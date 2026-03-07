@@ -52,12 +52,7 @@ public:
     bool collectOutlineSegmentsByObjectId(quint64 objectId, QVector<WorldLineSegment>& outSegments) const;
     const LayoutObjectModel* findObjectById(quint64 objectId) const;
     bool removeObjectById(quint64 objectId);
-
-    // Legacy rectangle-index helper retained for compatibility with index-based callers.
-    bool removeRectangleAt(int rectangleIndex);
-
 private:
-    bool removeRectangleAtRecursive(int& rectangleIndex);
     bool collectOutlineSegmentsByObjectIdRecursive(quint64 objectId,
                                                    QVector<WorldLineSegment>& outSegments) const;
     const LayoutObjectModel* findObjectByIdRecursive(quint64 objectId) const;
