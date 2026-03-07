@@ -56,7 +56,7 @@ private slots:
     // Table interaction handlers.
     void onCellChanged(int row, int column);
     void onCurrentRowChanged(int currentRow, int previousRow);
-    void onRectangleDeletionRequested(int rectangleIndex);
+    void onObjectDeletionRequested(quint64 objectId);
     void onMouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
 protected:
