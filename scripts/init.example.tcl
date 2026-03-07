@@ -10,5 +10,6 @@ layer load example_layers.txt
 # layer configure Metal3 drawing -visible 0
 # layer configure Metal2 drawing -selectable 0
 # tool set rect
+# tool stretch precision 10
 source bindkeys.tcl
 source transcript_filters.tcl

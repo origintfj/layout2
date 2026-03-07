@@ -142,6 +142,18 @@ public:
         if (m_activeTool != "select") {
             m_hoveredObjectId = 0;
         }
+
+        if (m_activeTool != "stretch") {
+            m_hoveredStretchHandle = StretchHandle{};
+            m_activeStretchHandle = StretchHandle{};
+            m_stretchDragging = false;
+        }
+
+        update();
+    }
+
+    void setStretchPrecision(double precisionPixels) {
+        m_stretchHitTolerancePixels = std::max(1.0, precisionPixels);
         update();
     }
 
@@ -168,6 +180,15 @@ protected:
             QVector<WorldLineSegment> previewSegments;
             if (m_rootCell->collectOutlineSegmentsByObjectId(m_hoveredObjectId, previewSegments)) {
                 drawHoverOutline(painter, previewSegments);
+            }
+        }
+
+        if (m_activeTool == "stretch") {
+            if (m_hoveredStretchHandle.kind != StretchHandleKind::None) {
+                drawStretchHandlePreview(painter, m_hoveredStretchHandle);
+            }
+            if (m_stretchDragging && m_activeStretchHandle.kind != StretchHandleKind::None) {
+                drawStretchHandlePreview(painter, m_activeStretchHandle);
             }
         }
 
@@ -209,6 +230,18 @@ protected:
                 return;
             }
 
+            if (m_activeTool == "stretch") {
+                const QVector<StretchHandle> candidates = stretchHandleCandidatesAt(worldX, worldY);
+                if (candidates.size() == 1) {
+                    m_activeStretchHandle = candidates.front();
+                    m_hoveredStretchHandle = m_activeStretchHandle;
+                    m_stretchDragging = true;
+                    update();
+                }
+                event->accept();
+                return;
+            }
+
             emit commandRequested(QString("canvas press %1 %2 1")
                                       .arg(worldX)
                                       .arg(worldY),
@@ -236,6 +269,16 @@ protected:
             update();
         }
 
+        if (m_activeTool == "stretch") {
+            if (m_stretchDragging) {
+                applyStretchDrag(worldX, worldY);
+            } else {
+                const QVector<StretchHandle> candidates = stretchHandleCandidatesAt(worldX, worldY);
+                m_hoveredStretchHandle = candidates.size() == 1 ? candidates.front() : StretchHandle{};
+            }
+            update();
+        }
+
         emit commandRequested(QString("canvas move %1 %2 %3")
                                   .arg(worldX)
                                   .arg(worldY)
@@ -259,14 +302,24 @@ protected:
         emit mouseWorldPositionChanged(0, 0, false);
         if (m_hoveredObjectId != 0) {
             m_hoveredObjectId = 0;
-            update();
         }
+        m_hoveredStretchHandle = StretchHandle{};
+        update();
         QWidget::leaveEvent(event);
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
             const QPointF world = screenToWorld(mouseEventPoint(event));
+
+            if (m_activeTool == "stretch" && m_stretchDragging) {
+                applyStretchDrag(static_cast<qint64>(world.x()), static_cast<qint64>(world.y()));
+                m_stretchDragging = false;
+                m_activeStretchHandle = StretchHandle{};
+                event->accept();
+                return;
+            }
+
             emit commandRequested(QString("canvas release %1 %2 1")
                                       .arg(static_cast<qint64>(world.x()))
                                       .arg(static_cast<qint64>(world.y())),
@@ -291,6 +344,19 @@ protected:
     }
 
 private:
+    enum class StretchHandleKind {
+        None,
+        Edge,
+        Vertex
+    };
+
+    struct StretchHandle {
+        quint64 objectId{0};
+        StretchHandleKind kind{StretchHandleKind::None};
+        int index{-1};
+        DrawnRectangle rectangle{};
+    };
+
     // Converts world integer coordinates into screen-space doubles.
     QPointF worldToScreen(qint64 x, qint64 y) const {
         return QPointF((static_cast<double>(x) * m_zoom) + m_panX,
@@ -369,6 +435,204 @@ private:
             const QPointF p1 = worldToScreen(segment.x1, segment.y1);
             const QPointF p2 = worldToScreen(segment.x2, segment.y2);
             painter.drawLine(p1, p2);
+        }
+    }
+
+    void drawStretchHandlePreview(QPainter& painter, const StretchHandle& handle) {
+        if (handle.kind == StretchHandleKind::None) {
+            return;
+        }
+
+        const qint64 minX = std::min(handle.rectangle.x1, handle.rectangle.x2);
+        const qint64 maxX = std::max(handle.rectangle.x1, handle.rectangle.x2);
+        const qint64 minY = std::min(handle.rectangle.y1, handle.rectangle.y2);
+        const qint64 maxY = std::max(handle.rectangle.y1, handle.rectangle.y2);
+
+        painter.setPen(QPen(QColor("#ffd400"), 2, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+
+        if (handle.kind == StretchHandleKind::Edge) {
+            WorldLineSegment edge{};
+            switch (handle.index) {
+            case 0:
+                edge = {minX, minY, maxX, minY};
+                break;
+            case 1:
+                edge = {maxX, minY, maxX, maxY};
+                break;
+            case 2:
+                edge = {maxX, maxY, minX, maxY};
+                break;
+            case 3:
+                edge = {minX, maxY, minX, minY};
+                break;
+            default:
+                return;
+            }
+            painter.drawLine(worldToScreen(edge.x1, edge.y1), worldToScreen(edge.x2, edge.y2));
+            return;
+        }
+
+        const double cornerLengthWorld = std::max(6.0 / m_zoom, std::min(static_cast<double>(maxX - minX), static_cast<double>(maxY - minY)) * 0.3);
+        qint64 vx = minX;
+        qint64 vy = minY;
+        int xDir = 1;
+        int yDir = 1;
+        switch (handle.index) {
+        case 0:
+            vx = minX;
+            vy = minY;
+            xDir = 1;
+            yDir = 1;
+            break;
+        case 1:
+            vx = maxX;
+            vy = minY;
+            xDir = -1;
+            yDir = 1;
+            break;
+        case 2:
+            vx = maxX;
+            vy = maxY;
+            xDir = -1;
+            yDir = -1;
+            break;
+        case 3:
+            vx = minX;
+            vy = maxY;
+            xDir = 1;
+            yDir = -1;
+            break;
+        default:
+            return;
+        }
+
+        const QPointF vertex = worldToScreen(vx, vy);
+        const QPointF xEnd = worldToScreen(vx + static_cast<qint64>(xDir * cornerLengthWorld), vy);
+        const QPointF yEnd = worldToScreen(vx, vy + static_cast<qint64>(yDir * cornerLengthWorld));
+        painter.drawLine(vertex, xEnd);
+        painter.drawLine(vertex, yEnd);
+    }
+
+    QVector<StretchHandle> stretchHandleCandidatesAt(qint64 x, qint64 y) const {
+        QVector<StretchHandle> vertexCandidates;
+        QVector<StretchHandle> edgeCandidates;
+        if (!m_rootCell) {
+            return {};
+        }
+
+        const double tolerance = m_stretchHitTolerancePixels / m_zoom;
+        QVector<const LayoutObjectModel*> objects;
+        m_rootCell->collectObjects(objects);
+
+        for (int i = objects.size() - 1; i >= 0; --i) {
+            const LayoutObjectModel* object = objects[i];
+            if (!object) {
+                continue;
+            }
+
+            const DrawnRectangle* rectangle = object->asRectangle();
+            if (!rectangle || !isSelectableRectangle(*rectangle)) {
+                continue;
+            }
+
+            const qint64 minX = std::min(rectangle->x1, rectangle->x2);
+            const qint64 maxX = std::max(rectangle->x1, rectangle->x2);
+            const qint64 minY = std::min(rectangle->y1, rectangle->y2);
+            const qint64 maxY = std::max(rectangle->y1, rectangle->y2);
+
+            const QVector<WorldPoint> vertices = {
+                {minX, minY}, {maxX, minY}, {maxX, maxY}, {minX, maxY}
+            };
+            for (int vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
+                const WorldPoint v = vertices[vertexIndex];
+                if (std::abs(static_cast<double>(x - v.x)) <= tolerance
+                    && std::abs(static_cast<double>(y - v.y)) <= tolerance) {
+                    vertexCandidates.push_back(StretchHandle{object->objectId(), StretchHandleKind::Vertex, vertexIndex, *rectangle});
+                }
+            }
+
+            const QVector<WorldLineSegment> edges = {
+                {minX, minY, maxX, minY},
+                {maxX, minY, maxX, maxY},
+                {maxX, maxY, minX, maxY},
+                {minX, maxY, minX, minY}
+            };
+
+            for (int edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
+                const WorldLineSegment edge = edges[edgeIndex];
+                const qint64 edgeMinX = std::min(edge.x1, edge.x2);
+                const qint64 edgeMaxX = std::max(edge.x1, edge.x2);
+                const qint64 edgeMinY = std::min(edge.y1, edge.y2);
+                const qint64 edgeMaxY = std::max(edge.y1, edge.y2);
+
+                const bool onHorizontal = edge.y1 == edge.y2
+                                          && std::abs(static_cast<double>(y - edge.y1)) <= tolerance
+                                          && static_cast<double>(x) >= static_cast<double>(edgeMinX) - tolerance
+                                          && static_cast<double>(x) <= static_cast<double>(edgeMaxX) + tolerance;
+                const bool onVertical = edge.x1 == edge.x2
+                                        && std::abs(static_cast<double>(x - edge.x1)) <= tolerance
+                                        && static_cast<double>(y) >= static_cast<double>(edgeMinY) - tolerance
+                                        && static_cast<double>(y) <= static_cast<double>(edgeMaxY) + tolerance;
+
+                if (onHorizontal || onVertical) {
+                    edgeCandidates.push_back(StretchHandle{object->objectId(), StretchHandleKind::Edge, edgeIndex, *rectangle});
+                }
+            }
+        }
+
+        return vertexCandidates.isEmpty() ? edgeCandidates : vertexCandidates;
+    }
+
+    void applyStretchDrag(qint64 x, qint64 y) {
+        if (!m_rootCell || m_activeStretchHandle.kind == StretchHandleKind::None) {
+            return;
+        }
+
+        DrawnRectangle updated = m_activeStretchHandle.rectangle;
+        const qint64 minX = std::min(m_activeStretchHandle.rectangle.x1, m_activeStretchHandle.rectangle.x2);
+        const qint64 maxX = std::max(m_activeStretchHandle.rectangle.x1, m_activeStretchHandle.rectangle.x2);
+        const qint64 minY = std::min(m_activeStretchHandle.rectangle.y1, m_activeStretchHandle.rectangle.y2);
+        const qint64 maxY = std::max(m_activeStretchHandle.rectangle.y1, m_activeStretchHandle.rectangle.y2);
+
+        if (m_activeStretchHandle.kind == StretchHandleKind::Edge) {
+            switch (m_activeStretchHandle.index) {
+            case 0:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, minX, y, maxX, maxY};
+                break;
+            case 1:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, minX, minY, x, maxY};
+                break;
+            case 2:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, minX, minY, maxX, y};
+                break;
+            case 3:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, x, minY, maxX, maxY};
+                break;
+            default:
+                return;
+            }
+        } else {
+            switch (m_activeStretchHandle.index) {
+            case 0:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, x, y, maxX, maxY};
+                break;
+            case 1:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, x, y, minX, maxY};
+                break;
+            case 2:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, x, y, minX, minY};
+                break;
+            case 3:
+                updated = DrawnRectangle{updated.layerNameId, updated.layerTypeId, x, y, maxX, minY};
+                break;
+            default:
+                return;
+            }
+        }
+
+        if (m_rootCell->updateRectangleByObjectId(m_activeStretchHandle.objectId, updated)) {
+            m_hoveredStretchHandle = m_activeStretchHandle;
         }
     }
 
@@ -574,6 +838,10 @@ private:
 
     bool m_previewEnabled{false};
     bool m_middlePanning{false};
+    double m_stretchHitTolerancePixels{8.0};
+    StretchHandle m_hoveredStretchHandle;
+    StretchHandle m_activeStretchHandle;
+    bool m_stretchDragging{false};
 
     QPointF m_lastPanPoint;
     double m_zoom{1.0};
@@ -844,6 +1112,10 @@ void LayoutEditorWindow::refreshWindowTitle() {
 
 void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, double gridSize) {
     m_canvas->setView(zoom, panX, panY, gridSize);
+}
+
+void LayoutEditorWindow::onStretchPrecisionChanged(double precisionPixels) {
+    m_canvas->setStretchPrecision(precisionPixels);
 }
 
 void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle) {

@@ -107,6 +107,7 @@ private:
 
     // Default tool applied to newly created editor sessions.
     QString m_defaultTool{"none"};
+    double m_defaultStretchPrecisionPixels{8.0};
 
     // Glob patterns for commands that should not be echoed to the transcript.
     QStringList m_transcriptFilters;

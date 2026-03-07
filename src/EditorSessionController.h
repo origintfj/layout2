@@ -20,6 +20,7 @@ struct EditorSession {
     double panX{0.0};
     double panY{0.0};
     double gridSize{40.0};
+    double stretchPrecisionPixels{8.0};
 };
 
 class EditorSessionController {
