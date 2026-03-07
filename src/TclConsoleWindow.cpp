@@ -250,6 +250,7 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
 
     initializeSessionLayers(*session);
     session->activeTool = m_defaultTool;
+    session->stretchPrecisionPixels = m_defaultStretchPrecisionPixels;
 
     connect(window, &LayoutEditorWindow::commandRequested,
             this, [this, editorId](const QString& command, const bool requestActivation) {
@@ -744,14 +745,58 @@ int TclConsoleWindow::handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* 
 }
 
 int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    EditorSession* session = effectiveSession();
+    if (objc >= 2 && QString::fromUtf8(Tcl_GetString(objv[1])) == "stretch") {
+        if (objc < 3 || QString::fromUtf8(Tcl_GetString(objv[2])) != "precision") {
+            Tcl_SetResult(interp, const_cast<char*>("usage: tool stretch precision ?pixels?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        if (objc == 3) {
+            const double value = session ? session->stretchPrecisionPixels : m_defaultStretchPrecisionPixels;
+            Tcl_SetObjResult(interp, Tcl_NewDoubleObj(value));
+            return TCL_OK;
+        }
+
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: tool stretch precision ?pixels?"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        double precisionPixels = 0.0;
+        if (!parseDouble(interp, objv[3], precisionPixels, "pixels")) {
+            return TCL_ERROR;
+        }
+        if (precisionPixels <= 0.0) {
+            Tcl_SetResult(interp, const_cast<char*>("pixels must be > 0"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        m_defaultStretchPrecisionPixels = precisionPixels;
+
+        for (auto it = m_sessionController.sessions().begin(); it != m_sessionController.sessions().end(); ++it) {
+            it.value().stretchPrecisionPixels = precisionPixels;
+            if (it.value().window) {
+                it.value().window->onStretchPrecisionChanged(precisionPixels);
+            }
+        }
+
+        Tcl_SetObjResult(interp,
+                         Tcl_NewStringObj(QString("stretch precision: %1 px")
+                                              .arg(precisionPixels)
+                                              .toUtf8()
+                                              .constData(),
+                                          -1));
+        return TCL_OK;
+    }
+
     if (objc != 3 || QString::fromUtf8(Tcl_GetString(objv[1])) != "set") {
-        Tcl_SetResult(interp, const_cast<char*>("usage: tool set <name>"), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: tool set <name> | tool stretch precision ?pixels?"), TCL_STATIC);
         return TCL_ERROR;
     }
 
     m_defaultTool = QString::fromUtf8(Tcl_GetString(objv[2]));
 
-    EditorSession* session = effectiveSession();
     if (session) {
         session->activeTool = m_defaultTool;
         session->window->onToolChanged(session->activeTool);

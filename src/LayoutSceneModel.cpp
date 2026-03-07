@@ -30,6 +30,10 @@ const DrawnRectangle* RectangleObjectModel::asRectangle() const {
     return &m_rectangle;
 }
 
+void RectangleObjectModel::setRectangle(const DrawnRectangle& rectangle) {
+    m_rectangle = rectangle;
+}
+
 void RectangleObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const {
     const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
     const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
@@ -155,6 +159,10 @@ const LayoutObjectModel* LayoutSceneNode::findObjectById(quint64 objectId) const
     return findObjectByIdRecursive(objectId);
 }
 
+bool LayoutSceneNode::updateRectangleByObjectId(quint64 objectId, const DrawnRectangle& rectangle) {
+    return updateRectangleByObjectIdRecursive(objectId, rectangle);
+}
+
 const LayoutObjectModel* LayoutSceneNode::findObjectByIdRecursive(quint64 objectId) const {
     for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
         if (object && object->objectId() == objectId) {
@@ -169,6 +177,29 @@ const LayoutObjectModel* LayoutSceneNode::findObjectByIdRecursive(quint64 object
     }
 
     return nullptr;
+}
+
+bool LayoutSceneNode::updateRectangleByObjectIdRecursive(quint64 objectId, const DrawnRectangle& rectangle) {
+    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+        if (!object || object->objectId() != objectId) {
+            continue;
+        }
+
+        if (auto* rectangleObject = dynamic_cast<RectangleObjectModel*>(object.get())) {
+            rectangleObject->setRectangle(rectangle);
+            return true;
+        }
+
+        return false;
+    }
+
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        if (child->updateRectangleByObjectIdRecursive(objectId, rectangle)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool LayoutSceneNode::removeObjectById(quint64 objectId) {

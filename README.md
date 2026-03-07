@@ -45,9 +45,11 @@ layer configure <LayerName> <LayerType> -selectable 0|1
 
 ```tcl
 tool set <toolName>
+tool stretch precision ?pixels?
 ```
 
 - Sets the active tool string used by the editor (for example `select` or `rect`).
+- `tool stretch precision ?pixels?` gets/sets the hover hit tolerance in screen pixels used by the stretch tool (default `8`).
 
 ### `canvas` command family
 

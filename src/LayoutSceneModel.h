@@ -30,6 +30,7 @@ public:
 
     bool containsPoint(qint64 x, qint64 y) const override;
     const DrawnRectangle* asRectangle() const override;
+    void setRectangle(const DrawnRectangle& rectangle);
     void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const override;
     void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const override;
 
@@ -51,6 +52,7 @@ public:
                                          const std::function<bool(const LayoutObjectModel&)>& predicate) const;
     bool collectOutlineSegmentsByObjectId(quint64 objectId, QVector<WorldLineSegment>& outSegments) const;
     const LayoutObjectModel* findObjectById(quint64 objectId) const;
+    bool updateRectangleByObjectId(quint64 objectId, const DrawnRectangle& rectangle);
     bool removeObjectById(quint64 objectId);
 
     // Legacy rectangle-index helper retained for compatibility with index-based callers.
@@ -61,6 +63,7 @@ private:
     bool collectOutlineSegmentsByObjectIdRecursive(quint64 objectId,
                                                    QVector<WorldLineSegment>& outSegments) const;
     const LayoutObjectModel* findObjectByIdRecursive(quint64 objectId) const;
+    bool updateRectangleByObjectIdRecursive(quint64 objectId, const DrawnRectangle& rectangle);
     bool removeObjectByIdRecursive(quint64 objectId);
 
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
