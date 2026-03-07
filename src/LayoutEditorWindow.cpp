@@ -138,14 +138,14 @@ public:
     void setActiveTool(const QString& toolName) {
         m_activeTool = toolName;
         if (m_activeTool != "select") {
-            m_hoveredIndex = -1;
+            m_hoveredObjectId = 0;
         }
         update();
     }
 
 signals:
     void commandRequested(const QString& command, bool requestActivation);
-    void rectangleDeletionRequested(int rectangleIndex);
+    void objectDeletionRequested(quint64 objectId);
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
 protected:
@@ -159,12 +159,12 @@ protected:
         // Draw committed geometry first from model-provided primitives.
         const QVector<SceneRenderPrimitive> primitives = flattenedRenderPrimitives();
         for (int i = 0; i < primitives.size(); ++i) {
-            drawPrimitive(painter, primitives[i], i == m_selectedIndex);
+            drawPrimitive(painter, primitives[i], primitives[i].objectId == m_selectedObjectId);
         }
 
-        if (m_activeTool == "select" && m_hoveredIndex >= 0 && m_hoveredIndex < primitives.size() && m_rootCell) {
+        if (m_activeTool == "select" && m_hoveredObjectId != 0 && m_rootCell) {
             QVector<WorldLineSegment> previewSegments;
-            if (m_rootCell->collectRectangleOutlineSegments(m_hoveredIndex, previewSegments)) {
+            if (m_rootCell->collectOutlineSegmentsByObjectId(m_hoveredObjectId, previewSegments)) {
                 drawHoverOutline(painter, previewSegments);
             }
         }
@@ -177,10 +177,9 @@ protected:
 
     void keyPressEvent(QKeyEvent* event) override {
         if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
-            && m_selectedIndex >= 0
-            && m_selectedIndex < flattenedRectangles().size()) {
-            emit rectangleDeletionRequested(m_selectedIndex);
-            m_selectedIndex = -1;
+            && m_selectedObjectId != 0) {
+            emit objectDeletionRequested(m_selectedObjectId);
+            m_selectedObjectId = 0;
             update();
             event->accept();
             return;
@@ -231,7 +230,7 @@ protected:
         const bool leftDown = event->buttons() & Qt::LeftButton;
 
         if (m_activeTool == "select") {
-            m_hoveredIndex = hoveredSelectableIndexAt(worldX, worldY);
+            m_hoveredObjectId = hoveredSelectableObjectIdAt(worldX, worldY);
             update();
         }
 
@@ -256,8 +255,8 @@ protected:
 
     void leaveEvent(QEvent* event) override {
         emit mouseWorldPositionChanged(0, 0, false);
-        if (m_hoveredIndex != -1) {
-            m_hoveredIndex = -1;
+        if (m_hoveredObjectId != 0) {
+            m_hoveredObjectId = 0;
             update();
         }
         QWidget::leaveEvent(event);
@@ -413,6 +412,20 @@ private:
         return layer && layer->visible && layer->selectable;
     }
 
+    bool isSelectableObjectId(quint64 objectId) const {
+        if (!m_rootCell || objectId == 0) {
+            return false;
+        }
+
+        const LayoutObjectModel* object = m_rootCell->findObjectById(objectId);
+        if (!object) {
+            return false;
+        }
+
+        const DrawnRectangle* rectangle = object->asRectangle();
+        return rectangle && isSelectableRectangle(*rectangle);
+    }
+
     QVector<SceneRenderPrimitive> flattenedRenderPrimitives() const {
         QVector<SceneRenderPrimitive> primitives;
         if (!m_rootCell) {
@@ -423,44 +436,13 @@ private:
         return primitives;
     }
 
-    QVector<const DrawnRectangle*> flattenedRectangles() const {
-        QVector<const DrawnRectangle*> rectangles;
-        if (!m_rootCell) {
-            return rectangles;
-        }
-
-        m_rootCell->collectRectangles(rectangles);
-        return rectangles;
-    }
-
-    QVector<int> rectangleIndexByObjectIndex() const {
-        QVector<int> indexByObject;
-        if (!m_rootCell) {
-            return indexByObject;
-        }
-
-        QVector<const LayoutObjectModel*> objects;
-        m_rootCell->collectObjects(objects);
-        indexByObject.fill(-1, objects.size());
-
-        int rectangleIndex = 0;
-        for (int i = 0; i < objects.size(); ++i) {
-            if (objects[i] && objects[i]->asRectangle()) {
-                indexByObject[i] = rectangleIndex;
-                ++rectangleIndex;
-            }
-        }
-
-        return indexByObject;
-    }
-
-    QVector<int> selectableRectangleCandidatesAt(qint64 x, qint64 y) const {
-        QVector<int> candidates;
+    QVector<quint64> selectableObjectCandidatesAt(qint64 x, qint64 y) const {
+        QVector<quint64> candidates;
         if (!m_rootCell) {
             return candidates;
         }
 
-        const QVector<int> objectMatches = m_rootCell->matchingObjectIndicesAt(
+        const QVector<quint64> objectMatches = m_rootCell->matchingObjectIdsAt(
             x,
             y,
             [this](const LayoutObjectModel& object) {
@@ -471,32 +453,25 @@ private:
             return candidates;
         }
 
-        const QVector<int> rectangleByObject = rectangleIndexByObjectIndex();
-        for (int objectIndex : objectMatches) {
-            if (objectIndex < 0 || objectIndex >= rectangleByObject.size()) {
-                continue;
-            }
-
-            const int rectangleIndex = rectangleByObject[objectIndex];
-            if (rectangleIndex >= 0) {
-                candidates.push_back(rectangleIndex);
-            }
+        for (quint64 objectId : objectMatches) {
+            candidates.push_back(objectId);
         }
 
         return candidates;
     }
 
-    int hoveredSelectableIndexAt(qint64 x, qint64 y) const {
-        const QVector<int> candidates = selectableRectangleCandidatesAt(x, y);
-        return candidates.isEmpty() ? -1 : candidates.front();
+    quint64 hoveredSelectableObjectIdAt(qint64 x, qint64 y) const {
+        const QVector<quint64> candidates = selectableObjectCandidatesAt(x, y);
+        return candidates.isEmpty() ? 0 : candidates.front();
     }
 
     void handleSelectionClick(qint64 x, qint64 y) {
-        const QVector<int> candidates = selectableRectangleCandidatesAt(x, y);
+
+        const QVector<quint64> candidates = selectableObjectCandidatesAt(x, y);
         if (candidates.isEmpty()) {
-            m_selectedIndex = -1;
-            m_hoveredIndex = -1;
-            m_lastSelectionCandidates.clear();
+            m_selectedObjectId = 0;
+            m_hoveredObjectId = 0;
+            m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
             update();
             return;
@@ -504,51 +479,37 @@ private:
 
         const QPointF selectionPoint(static_cast<double>(x), static_cast<double>(y));
         const bool samePoint = m_hasSelectionPoint && m_lastSelectionPoint == selectionPoint;
-        const bool sameCandidates = samePoint && (candidates == m_lastSelectionCandidates);
+        const bool sameCandidates = samePoint && (candidates == m_lastSelectionCandidateIds);
 
         if (!sameCandidates) {
-            m_selectedIndex = candidates.front();
-            m_hoveredIndex = candidates.size() > 1 ? candidates[1] : candidates.front();
+            m_selectedObjectId = candidates.front();
+            m_hoveredObjectId = candidates.size() > 1 ? candidates[1] : candidates.front();
         } else {
-            int currentCandidate = candidates.indexOf(m_selectedIndex);
+            int currentCandidate = candidates.indexOf(m_selectedObjectId);
             if (currentCandidate < 0) {
                 currentCandidate = 0;
             }
 
             const int nextSelectedCandidate = (currentCandidate + 1) % candidates.size();
-            m_selectedIndex = candidates[nextSelectedCandidate];
-            m_hoveredIndex = candidates[(nextSelectedCandidate + 1) % candidates.size()];
+            m_selectedObjectId = candidates[nextSelectedCandidate];
+            m_hoveredObjectId = candidates[(nextSelectedCandidate + 1) % candidates.size()];
         }
 
-        m_lastSelectionCandidates = candidates;
+        m_lastSelectionCandidateIds = candidates;
         m_lastSelectionPoint = selectionPoint;
         m_hasSelectionPoint = true;
         update();
     }
 
     void validateSelection() {
-        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
-        if (m_selectedIndex < 0 || m_selectedIndex >= rectangles.size()) {
-            m_selectedIndex = -1;
-            return;
-        }
-
-        const DrawnRectangle& rectangle = *rectangles[m_selectedIndex];
-        if (!isSelectableRectangle(rectangle)) {
-            m_selectedIndex = -1;
+        if (!isSelectableObjectId(m_selectedObjectId)) {
+            m_selectedObjectId = 0;
         }
     }
 
     void validateHover() {
-        const QVector<const DrawnRectangle*> rectangles = flattenedRectangles();
-        if (m_hoveredIndex < 0 || m_hoveredIndex >= rectangles.size()) {
-            m_hoveredIndex = -1;
-            return;
-        }
-
-        const DrawnRectangle& rectangle = *rectangles[m_hoveredIndex];
-        if (!isSelectableRectangle(rectangle)) {
-            m_hoveredIndex = -1;
+        if (!isSelectableObjectId(m_hoveredObjectId)) {
+            m_hoveredObjectId = 0;
         }
     }
 
@@ -603,9 +564,9 @@ private:
     DrawnRectangle m_preview;
     QString m_activeTool{"none"};
 
-    int m_selectedIndex{-1};
-    int m_hoveredIndex{-1};
-    QVector<int> m_lastSelectionCandidates;
+    quint64 m_selectedObjectId{0};
+    quint64 m_hoveredObjectId{0};
+    QVector<quint64> m_lastSelectionCandidateIds;
     QPointF m_lastSelectionPoint;
     bool m_hasSelectionPoint{false};
 
@@ -682,8 +643,8 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
     connect(m_layerTable, &QTableWidget::currentCellChanged,
             this, [this](int currentRow, int, int previousRow, int) { onCurrentRowChanged(currentRow, previousRow); });
     connect(m_canvas, &LayoutCanvas::commandRequested, this, &LayoutEditorWindow::commandRequested);
-    connect(m_canvas, &LayoutCanvas::rectangleDeletionRequested,
-            this, &LayoutEditorWindow::onRectangleDeletionRequested);
+    connect(m_canvas, &LayoutCanvas::objectDeletionRequested,
+            this, &LayoutEditorWindow::onObjectDeletionRequested);
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
 
@@ -892,12 +853,12 @@ void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {
     m_canvas->setRootCell(m_rootCell.get());
 }
 
-void LayoutEditorWindow::onRectangleDeletionRequested(int rectangleIndex) {
-    if (rectangleIndex < 0) {
+void LayoutEditorWindow::onObjectDeletionRequested(quint64 objectId) {
+    if (objectId == 0) {
         return;
     }
 
-    if (!m_rootCell->removeRectangleAt(rectangleIndex)) {
+    if (!m_rootCell->removeObjectById(objectId)) {
         return;
     }
 

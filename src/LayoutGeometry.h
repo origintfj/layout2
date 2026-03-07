@@ -30,6 +30,7 @@ struct WorldPoint {
 
 // SceneRenderPrimitive describes one drawable scene primitive in world space.
 struct SceneRenderPrimitive {
+    quint64 objectId;
     quint32 layerNameId;
     quint32 layerTypeId;
     QVector<WorldPoint> polygonVertices;
