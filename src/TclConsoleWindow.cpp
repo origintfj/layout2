@@ -789,8 +789,6 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
 
         // Rectangle tool starts preview only for left button and valid active layer.
         if (button == 1 && session->activeTool == "rect" && !session->activeLayerName.isEmpty()) {
-            session->rectInProgress = true;
-
             auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
                                    [session](const LayerDefinition& layer) {
                                        return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
@@ -802,8 +800,18 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
                 return TCL_ERROR;
             }
 
-            session->previewRectangle = {it->nameId, it->typeId, x, y, x, y};
-            session->window->onRectanglePreviewChanged(true, session->previewRectangle);
+            session->editInProgress = true;
+            session->editPreview.objectId = 0;
+            session->editPreview.layerNameId = it->nameId;
+            session->editPreview.layerTypeId = it->typeId;
+            session->editPreview.preview = true;
+            session->editPreview.polygonVertices = {
+                WorldPoint{x, y},
+                WorldPoint{x, y},
+                WorldPoint{x, y},
+                WorldPoint{x, y}
+            };
+            session->window->onEditPreviewChanged(true, session->editPreview);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -817,10 +825,11 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (session->rectInProgress && leftDown == 1) {
-            session->previewRectangle.x2 = x;
-            session->previewRectangle.y2 = y;
-            session->window->onRectanglePreviewChanged(true, session->previewRectangle);
+        if (session->editInProgress && leftDown == 1 && session->editPreview.polygonVertices.size() == 4) {
+            session->editPreview.polygonVertices[1] = WorldPoint{x, session->editPreview.polygonVertices[0].y};
+            session->editPreview.polygonVertices[2] = WorldPoint{x, y};
+            session->editPreview.polygonVertices[3] = WorldPoint{session->editPreview.polygonVertices[0].x, y};
+            session->window->onEditPreviewChanged(true, session->editPreview);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -834,12 +843,22 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (button == 1 && session->rectInProgress) {
-            session->previewRectangle.x2 = x;
-            session->previewRectangle.y2 = y;
-            session->window->onRectangleCommitted(session->previewRectangle);
-            session->window->onRectanglePreviewChanged(false, session->previewRectangle);
-            session->rectInProgress = false;
+        if (button == 1 && session->editInProgress && session->editPreview.polygonVertices.size() == 4) {
+            session->editPreview.polygonVertices[1] = WorldPoint{x, session->editPreview.polygonVertices[0].y};
+            session->editPreview.polygonVertices[2] = WorldPoint{x, y};
+            session->editPreview.polygonVertices[3] = WorldPoint{session->editPreview.polygonVertices[0].x, y};
+
+            const DrawnRectangle rectangle = {
+                session->editPreview.layerNameId,
+                session->editPreview.layerTypeId,
+                session->editPreview.polygonVertices[0].x,
+                session->editPreview.polygonVertices[0].y,
+                session->editPreview.polygonVertices[2].x,
+                session->editPreview.polygonVertices[2].y
+            };
+            session->window->onRectangleCommitted(rectangle);
+            session->window->onEditPreviewChanged(false, session->editPreview);
+            session->editInProgress = false;
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
