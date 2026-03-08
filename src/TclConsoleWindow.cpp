@@ -1,5 +1,7 @@
 #include "TclConsoleWindow.h"
 
+#include "LayoutSceneModel.h"
+
 #include <QCoreApplication>
 #include <QAction>
 #include <QCloseEvent>
@@ -801,16 +803,15 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             }
 
             session->editInProgress = true;
-            session->editPreview.objectId = 0;
-            session->editPreview.layerNameId = it->nameId;
-            session->editPreview.layerTypeId = it->typeId;
-            session->editPreview.preview = true;
-            session->editPreview.polygonVertices = {
-                WorldPoint{x, y},
-                WorldPoint{x, y},
-                WorldPoint{x, y},
-                WorldPoint{x, y}
-            };
+            session->editAnchorX = x;
+            session->editAnchorY = y;
+            session->editPreview = LayoutEditPreviewModel::buildRectanglePreviewPrimitive(
+                it->nameId,
+                it->typeId,
+                session->editAnchorX,
+                session->editAnchorY,
+                x,
+                y);
             session->window->onEditPreviewChanged(true, session->editPreview);
         }
 
@@ -825,10 +826,14 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (session->editInProgress && leftDown == 1 && session->editPreview.polygonVertices.size() == 4) {
-            session->editPreview.polygonVertices[1] = WorldPoint{x, session->editPreview.polygonVertices[0].y};
-            session->editPreview.polygonVertices[2] = WorldPoint{x, y};
-            session->editPreview.polygonVertices[3] = WorldPoint{session->editPreview.polygonVertices[0].x, y};
+        if (session->editInProgress && leftDown == 1) {
+            session->editPreview = LayoutEditPreviewModel::buildRectanglePreviewPrimitive(
+                session->editPreview.layerNameId,
+                session->editPreview.layerTypeId,
+                session->editAnchorX,
+                session->editAnchorY,
+                x,
+                y);
             session->window->onEditPreviewChanged(true, session->editPreview);
         }
 
@@ -843,19 +848,16 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        if (button == 1 && session->editInProgress && session->editPreview.polygonVertices.size() == 4) {
-            session->editPreview.polygonVertices[1] = WorldPoint{x, session->editPreview.polygonVertices[0].y};
-            session->editPreview.polygonVertices[2] = WorldPoint{x, y};
-            session->editPreview.polygonVertices[3] = WorldPoint{session->editPreview.polygonVertices[0].x, y};
-
-            const DrawnRectangle rectangle = {
+        if (button == 1 && session->editInProgress) {
+            session->editPreview = LayoutEditPreviewModel::buildRectanglePreviewPrimitive(
                 session->editPreview.layerNameId,
                 session->editPreview.layerTypeId,
-                session->editPreview.polygonVertices[0].x,
-                session->editPreview.polygonVertices[0].y,
-                session->editPreview.polygonVertices[2].x,
-                session->editPreview.polygonVertices[2].y
-            };
+                session->editAnchorX,
+                session->editAnchorY,
+                x,
+                y);
+
+            const DrawnRectangle rectangle = LayoutEditPreviewModel::rectangleFromPreviewPrimitive(session->editPreview);
             session->window->onRectangleCommitted(rectangle);
             session->window->onEditPreviewChanged(false, session->editPreview);
             session->editInProgress = false;
