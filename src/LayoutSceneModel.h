@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QVector>
+#include <QString>
 #include <functional>
 #include <memory>
 
@@ -36,6 +37,26 @@ public:
 private:
     DrawnRectangle m_rectangle;
 };
+
+
+namespace LayoutEditPreviewModel {
+bool tryBuildPreviewPrimitive(const QString& activeTool,
+                              quint32 layerNameId,
+                              quint32 layerTypeId,
+                              qint64 anchorX,
+                              qint64 anchorY,
+                              qint64 currentX,
+                              qint64 currentY,
+                              SceneRenderPrimitive& outPrimitive);
+bool tryBuildCommittedRectangle(const QString& activeTool,
+                                quint32 layerNameId,
+                                quint32 layerTypeId,
+                                qint64 anchorX,
+                                qint64 anchorY,
+                                qint64 currentX,
+                                qint64 currentY,
+                                DrawnRectangle& outRectangle);
+}
 
 // Hierarchical container for objects and child scene nodes.
 class LayoutSceneNode {

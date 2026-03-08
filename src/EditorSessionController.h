@@ -14,8 +14,12 @@ struct EditorSession {
     QString activeLayerName;
     QString activeLayerType;
     QString activeTool{"none"};
-    bool rectInProgress{false};
-    DrawnRectangle previewRectangle{};
+    bool editInProgress{false};
+    SceneRenderPrimitive editPreview{};
+    qint64 editAnchorX{0};
+    qint64 editAnchorY{0};
+    quint32 editLayerNameId{0};
+    quint32 editLayerTypeId{0};
     double zoom{1.0};
     double panX{0.0};
     double panY{0.0};

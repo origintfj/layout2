@@ -52,6 +52,7 @@ void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>&
     primitive.objectId = objectId();
     primitive.layerNameId = m_rectangle.layerNameId;
     primitive.layerTypeId = m_rectangle.layerTypeId;
+    primitive.preview = false;
     primitive.polygonVertices = {
         WorldPoint{minX, minY},
         WorldPoint{maxX, minY},
@@ -190,4 +191,45 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
     }
 
     return false;
+}
+
+bool LayoutEditPreviewModel::tryBuildPreviewPrimitive(const QString& activeTool,
+                                                  const quint32 layerNameId,
+                                                  const quint32 layerTypeId,
+                                                  const qint64 anchorX,
+                                                  const qint64 anchorY,
+                                                  const qint64 currentX,
+                                                  const qint64 currentY,
+                                                  SceneRenderPrimitive& outPrimitive) {
+    if (activeTool != "rect") {
+        return false;
+    }
+
+    outPrimitive.objectId = 0;
+    outPrimitive.layerNameId = layerNameId;
+    outPrimitive.layerTypeId = layerTypeId;
+    outPrimitive.preview = true;
+    outPrimitive.polygonVertices = {
+        WorldPoint{anchorX, anchorY},
+        WorldPoint{currentX, anchorY},
+        WorldPoint{currentX, currentY},
+        WorldPoint{anchorX, currentY}
+    };
+    return true;
+}
+
+bool LayoutEditPreviewModel::tryBuildCommittedRectangle(const QString& activeTool,
+                                                        const quint32 layerNameId,
+                                                        const quint32 layerTypeId,
+                                                        const qint64 anchorX,
+                                                        const qint64 anchorY,
+                                                        const qint64 currentX,
+                                                        const qint64 currentY,
+                                                        DrawnRectangle& outRectangle) {
+    if (activeTool != "rect") {
+        return false;
+    }
+
+    outRectangle = DrawnRectangle{layerNameId, layerTypeId, anchorX, anchorY, currentX, currentY};
+    return true;
 }
