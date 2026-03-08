@@ -115,9 +115,9 @@ public:
         update();
     }
 
-    void setPreview(bool enabled, const DrawnRectangle& rectangle) {
-        m_previewEnabled = enabled;
-        m_preview = rectangle;
+    void setEditPreview(bool enabled, const SceneRenderPrimitive& primitive) {
+        m_editPreviewEnabled = enabled;
+        m_editPreview = primitive;
         update();
     }
 
@@ -171,10 +171,6 @@ protected:
             }
         }
 
-        // Draw rubber-band preview on top.
-        if (m_previewEnabled) {
-            drawRectangle(painter, m_preview, true, false);
-        }
     }
 
     void keyPressEvent(QKeyEvent* event) override {
@@ -303,34 +299,6 @@ private:
                        (m_panY - p.y()) / m_zoom);
     }
 
-    // Shared draw helper for committed and preview rectangles.
-    void drawRectangle(QPainter& painter, const DrawnRectangle& r, bool preview, bool selected) {
-        const LayerDefinition* layer = layerForRectangle(r);
-        if (!layer) {
-            return;
-        }
-        QPointF p1 = worldToScreen(r.x1, r.y1);
-        QPointF p2 = worldToScreen(r.x2, r.y2);
-        QRectF rect = QRectF(p1, p2).normalized();
-
-        QColor fillColor = layer->color;
-        if (selected) {
-            fillColor = fillColor.lighter(130);
-        }
-        fillColor.setAlpha(preview ? 90 : 140);
-
-        QColor outlineColor = layer->color;
-        outlineColor.setAlpha(preview ? 180 : 220);
-        if (selected) {
-            outlineColor = QColor("#ffffff");
-            outlineColor.setAlpha(255);
-        }
-
-        painter.setPen(QPen(outlineColor, selected ? 1 : 1, preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(patternBrushFor(fillColor, layer->pattern));
-        painter.drawRect(rect);
-    }
-
     void drawPrimitive(QPainter& painter, const SceneRenderPrimitive& primitive, bool selected) {
         const LayerDefinition* layer = layerForPrimitive(primitive);
         if (!layer || !layer->visible || primitive.polygonVertices.isEmpty()) {
@@ -347,16 +315,16 @@ private:
         if (selected) {
             fillColor = fillColor.lighter(130);
         }
-        fillColor.setAlpha(140);
+        fillColor.setAlpha(primitive.preview ? 90 : 140);
 
         QColor outlineColor = layer->color;
-        outlineColor.setAlpha(220);
+        outlineColor.setAlpha(primitive.preview ? 180 : 220);
         if (selected) {
             outlineColor = QColor("#ffffff");
             outlineColor.setAlpha(255);
         }
 
-        painter.setPen(QPen(outlineColor, 1, Qt::SolidLine));
+        painter.setPen(QPen(outlineColor, 1, primitive.preview ? Qt::DashLine : Qt::SolidLine));
         painter.setBrush(patternBrushFor(fillColor, layer->pattern));
         painter.drawPolygon(polygon);
     }
@@ -430,11 +398,14 @@ private:
 
     QVector<SceneRenderPrimitive> flattenedRenderPrimitives() const {
         QVector<SceneRenderPrimitive> primitives;
-        if (!m_rootCell) {
-            return primitives;
+        if (m_rootCell) {
+            m_rootCell->collectRenderPrimitives(primitives);
         }
 
-        m_rootCell->collectRenderPrimitives(primitives);
+        if (m_editPreviewEnabled) {
+            primitives.push_back(m_editPreview);
+        }
+
         return primitives;
     }
 
@@ -563,7 +534,7 @@ private:
     const LayoutSceneNode* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
-    DrawnRectangle m_preview;
+    SceneRenderPrimitive m_editPreview;
     QString m_activeTool{"none"};
 
     quint64 m_selectedObjectId{0};
@@ -572,7 +543,7 @@ private:
     QPointF m_lastSelectionPoint;
     bool m_hasSelectionPoint{false};
 
-    bool m_previewEnabled{false};
+    bool m_editPreviewEnabled{false};
     bool m_middlePanning{false};
 
     QPointF m_lastPanPoint;
@@ -846,8 +817,8 @@ void LayoutEditorWindow::onViewChanged(double zoom, double panX, double panY, do
     m_canvas->setView(zoom, panX, panY, gridSize);
 }
 
-void LayoutEditorWindow::onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle) {
-    m_canvas->setPreview(enabled, rectangle);
+void LayoutEditorWindow::onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive) {
+    m_canvas->setEditPreview(enabled, primitive);
 }
 
 void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {

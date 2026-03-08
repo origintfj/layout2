@@ -43,8 +43,8 @@ public slots:
     void onToolChanged(const QString& toolName);
     void onViewChanged(double zoom, double panX, double panY, double gridSize);
 
-    // Rectangle preview/commit updates received from Tcl execution side.
-    void onRectanglePreviewChanged(bool enabled, const DrawnRectangle& rectangle);
+    // Edit preview updates received from Tcl execution side.
+    void onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive);
     void onRectangleCommitted(const DrawnRectangle& rectangle);
 
 signals:

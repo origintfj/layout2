@@ -52,6 +52,7 @@ void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>&
     primitive.objectId = objectId();
     primitive.layerNameId = m_rectangle.layerNameId;
     primitive.layerTypeId = m_rectangle.layerTypeId;
+    primitive.preview = false;
     primitive.polygonVertices = {
         WorldPoint{minX, minY},
         WorldPoint{maxX, minY},
@@ -191,3 +192,40 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
 
     return false;
 }
+
+
+SceneRenderPrimitive LayoutEditPreviewModel::buildRectanglePreviewPrimitive(const quint32 layerNameId,
+                                                                            const quint32 layerTypeId,
+                                                                            const qint64 anchorX,
+                                                                            const qint64 anchorY,
+                                                                            const qint64 currentX,
+                                                                            const qint64 currentY) {
+    SceneRenderPrimitive primitive;
+    primitive.objectId = 0;
+    primitive.layerNameId = layerNameId;
+    primitive.layerTypeId = layerTypeId;
+    primitive.preview = true;
+    primitive.polygonVertices = {
+        WorldPoint{anchorX, anchorY},
+        WorldPoint{currentX, anchorY},
+        WorldPoint{currentX, currentY},
+        WorldPoint{anchorX, currentY}
+    };
+    return primitive;
+}
+
+DrawnRectangle LayoutEditPreviewModel::rectangleFromPreviewPrimitive(const SceneRenderPrimitive& primitive) {
+    if (primitive.polygonVertices.size() < 4) {
+        return DrawnRectangle{primitive.layerNameId, primitive.layerTypeId, 0, 0, 0, 0};
+    }
+
+    return DrawnRectangle{
+        primitive.layerNameId,
+        primitive.layerTypeId,
+        primitive.polygonVertices[0].x,
+        primitive.polygonVertices[0].y,
+        primitive.polygonVertices[2].x,
+        primitive.polygonVertices[2].y
+    };
+}
+

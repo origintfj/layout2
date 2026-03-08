@@ -37,6 +37,17 @@ private:
     DrawnRectangle m_rectangle;
 };
 
+
+namespace LayoutEditPreviewModel {
+SceneRenderPrimitive buildRectanglePreviewPrimitive(quint32 layerNameId,
+                                                    quint32 layerTypeId,
+                                                    qint64 anchorX,
+                                                    qint64 anchorY,
+                                                    qint64 currentX,
+                                                    qint64 currentY);
+DrawnRectangle rectangleFromPreviewPrimitive(const SceneRenderPrimitive& primitive);
+}
+
 // Hierarchical container for objects and child scene nodes.
 class LayoutSceneNode {
 public:
