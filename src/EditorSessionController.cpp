@@ -102,5 +102,5 @@ void EditorSessionController::applySessionToWindow(EditorSession& session) const
     session.window->onActiveLayerChanged(session.activeLayerName, session.activeLayerType);
     session.window->onToolChanged(session.activeTool);
     session.window->onViewChanged(session.zoom, session.panX, session.panY, session.gridSize);
-    session.window->onRectanglePreviewChanged(session.rectInProgress, session.previewRectangle);
+    session.window->onEditPreviewChanged(session.editInProgress, session.editPreview);
 }

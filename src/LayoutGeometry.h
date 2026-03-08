@@ -33,5 +33,6 @@ struct SceneRenderPrimitive {
     quint64 objectId;
     quint32 layerNameId;
     quint32 layerTypeId;
+    bool preview{false};
     QVector<WorldPoint> polygonVertices;
 };

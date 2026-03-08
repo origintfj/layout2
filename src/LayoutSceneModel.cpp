@@ -52,6 +52,7 @@ void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>&
     primitive.objectId = objectId();
     primitive.layerNameId = m_rectangle.layerNameId;
     primitive.layerTypeId = m_rectangle.layerTypeId;
+    primitive.preview = false;
     primitive.polygonVertices = {
         WorldPoint{minX, minY},
         WorldPoint{maxX, minY},
