@@ -755,6 +755,12 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 
     EditorSession* session = effectiveSession();
     if (session) {
+        const bool changedTool = session->activeTool.compare(m_defaultTool, Qt::CaseInsensitive) != 0;
+        if (changedTool && session->editInProgress) {
+            session->window->onEditPreviewChanged(false, session->editPreview);
+            session->editInProgress = false;
+        }
+
         session->activeTool = m_defaultTool;
         session->window->onToolChanged(session->activeTool);
     }
@@ -874,8 +880,9 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
                                                                  y,
                                                                  session->editPreview);
                 session->window->onRectangleCommitted(rectangle);
-                session->window->onEditPreviewChanged(false, session->editPreview);
             }
+
+            session->window->onEditPreviewChanged(false, session->editPreview);
             session->editInProgress = false;
         }
 
