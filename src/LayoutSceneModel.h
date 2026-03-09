@@ -48,14 +48,17 @@ bool tryBuildPreviewPrimitive(const QString& activeTool,
                               qint64 currentX,
                               qint64 currentY,
                               SceneRenderPrimitive& outPrimitive);
-bool tryBuildCommittedRectangle(const QString& activeTool,
+bool tryBuildCommittedPrimitive(const QString& activeTool,
                                 quint32 layerNameId,
                                 quint32 layerTypeId,
                                 qint64 anchorX,
                                 qint64 anchorY,
                                 qint64 currentX,
                                 qint64 currentY,
-                                DrawnRectangle& outRectangle);
+                                SceneRenderPrimitive& outPrimitive);
+bool tryBuildCommittedObject(const QString& activeTool,
+                             const SceneRenderPrimitive& primitive,
+                             std::shared_ptr<LayoutObjectModel>& outObject);
 }
 
 // Hierarchical container for objects and child scene nodes.

@@ -45,7 +45,7 @@ public slots:
 
     // Edit preview updates received from Tcl execution side.
     void onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive);
-    void onRectangleCommitted(const DrawnRectangle& rectangle);
+    void onPrimitiveCommitted(const SceneRenderPrimitive& primitive);
 
 signals:
     // Single dispatch point for UI->Tcl command routing.

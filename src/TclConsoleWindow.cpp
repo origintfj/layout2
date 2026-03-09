@@ -862,24 +862,16 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         }
 
         if (button == 1 && session->editInProgress) {
-            DrawnRectangle rectangle{};
-            if (LayoutEditPreviewModel::tryBuildCommittedRectangle(session->activeTool,
+            SceneRenderPrimitive primitive{};
+            if (LayoutEditPreviewModel::tryBuildCommittedPrimitive(session->activeTool,
                                                                    session->editLayerNameId,
                                                                    session->editLayerTypeId,
                                                                    session->editAnchorX,
                                                                    session->editAnchorY,
                                                                    x,
                                                                    y,
-                                                                   rectangle)) {
-                LayoutEditPreviewModel::tryBuildPreviewPrimitive(session->activeTool,
-                                                                 session->editLayerNameId,
-                                                                 session->editLayerTypeId,
-                                                                 session->editAnchorX,
-                                                                 session->editAnchorY,
-                                                                 x,
-                                                                 y,
-                                                                 session->editPreview);
-                session->window->onRectangleCommitted(rectangle);
+                                                                   primitive)) {
+                session->window->onPrimitiveCommitted(primitive);
             }
 
             session->window->onEditPreviewChanged(false, session->editPreview);
