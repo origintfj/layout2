@@ -218,18 +218,46 @@ bool LayoutEditPreviewModel::tryBuildPreviewPrimitive(const QString& activeTool,
     return true;
 }
 
-bool LayoutEditPreviewModel::tryBuildCommittedRectangle(const QString& activeTool,
+bool LayoutEditPreviewModel::tryBuildCommittedPrimitive(const QString& activeTool,
                                                         const quint32 layerNameId,
                                                         const quint32 layerTypeId,
                                                         const qint64 anchorX,
                                                         const qint64 anchorY,
                                                         const qint64 currentX,
                                                         const qint64 currentY,
-                                                        DrawnRectangle& outRectangle) {
+                                                        SceneRenderPrimitive& outPrimitive) {
     if (activeTool != "rect") {
         return false;
     }
 
-    outRectangle = DrawnRectangle{layerNameId, layerTypeId, anchorX, anchorY, currentX, currentY};
+    outPrimitive.objectId = 0;
+    outPrimitive.layerNameId = layerNameId;
+    outPrimitive.layerTypeId = layerTypeId;
+    outPrimitive.preview = false;
+    outPrimitive.polygonVertices = {
+        WorldPoint{anchorX, anchorY},
+        WorldPoint{currentX, anchorY},
+        WorldPoint{currentX, currentY},
+        WorldPoint{anchorX, currentY}
+    };
+    return true;
+}
+
+bool LayoutEditPreviewModel::tryBuildCommittedObject(const QString& activeTool,
+                                                     const SceneRenderPrimitive& primitive,
+                                                     std::shared_ptr<LayoutObjectModel>& outObject) {
+    if (activeTool != "rect" || primitive.polygonVertices.size() != 4) {
+        return false;
+    }
+
+    const WorldPoint& anchor = primitive.polygonVertices[0];
+    const WorldPoint& current = primitive.polygonVertices[2];
+    const DrawnRectangle rectangle{primitive.layerNameId,
+                                   primitive.layerTypeId,
+                                   anchor.x,
+                                   anchor.y,
+                                   current.x,
+                                   current.y};
+    outObject = std::make_shared<RectangleObjectModel>(rectangle);
     return true;
 }

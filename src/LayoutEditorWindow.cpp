@@ -821,8 +821,13 @@ void LayoutEditorWindow::onEditPreviewChanged(bool enabled, const SceneRenderPri
     m_canvas->setEditPreview(enabled, primitive);
 }
 
-void LayoutEditorWindow::onRectangleCommitted(const DrawnRectangle& rectangle) {
-    m_rootCell->addObject(std::make_shared<RectangleObjectModel>(rectangle));
+void LayoutEditorWindow::onPrimitiveCommitted(const SceneRenderPrimitive& primitive) {
+    std::shared_ptr<LayoutObjectModel> object;
+    if (!LayoutEditPreviewModel::tryBuildCommittedObject(m_activeTool, primitive, object) || !object) {
+        return;
+    }
+
+    m_rootCell->addObject(object);
     m_canvas->setRootCell(m_rootCell.get());
 }
 
