@@ -201,21 +201,21 @@ bool LayoutEditPreviewModel::tryBuildPreviewPrimitive(const QString& activeTool,
                                                   const qint64 currentX,
                                                   const qint64 currentY,
                                                   SceneRenderPrimitive& outPrimitive) {
-    if (activeTool != "rect") {
-        return false;
+    if (activeTool == "rect") {
+        outPrimitive.objectId = 0;
+        outPrimitive.layerNameId = layerNameId;
+        outPrimitive.layerTypeId = layerTypeId;
+        outPrimitive.preview = true;
+        outPrimitive.polygonVertices = {
+            WorldPoint{anchorX, anchorY},
+            WorldPoint{currentX, anchorY},
+            WorldPoint{currentX, currentY},
+            WorldPoint{anchorX, currentY}
+        };
+        return true;
     }
 
-    outPrimitive.objectId = 0;
-    outPrimitive.layerNameId = layerNameId;
-    outPrimitive.layerTypeId = layerTypeId;
-    outPrimitive.preview = true;
-    outPrimitive.polygonVertices = {
-        WorldPoint{anchorX, anchorY},
-        WorldPoint{currentX, anchorY},
-        WorldPoint{currentX, currentY},
-        WorldPoint{anchorX, currentY}
-    };
-    return true;
+    return false;
 }
 
 bool LayoutEditPreviewModel::tryBuildCommittedPrimitive(const QString& activeTool,
@@ -226,21 +226,21 @@ bool LayoutEditPreviewModel::tryBuildCommittedPrimitive(const QString& activeToo
                                                         const qint64 currentX,
                                                         const qint64 currentY,
                                                         SceneRenderPrimitive& outPrimitive) {
-    if (activeTool != "rect") {
-        return false;
+    if (activeTool == "rect") {
+        outPrimitive.objectId = 0;
+        outPrimitive.layerNameId = layerNameId;
+        outPrimitive.layerTypeId = layerTypeId;
+        outPrimitive.preview = false;
+        outPrimitive.polygonVertices = {
+            WorldPoint{anchorX, anchorY},
+            WorldPoint{currentX, anchorY},
+            WorldPoint{currentX, currentY},
+            WorldPoint{anchorX, currentY}
+        };
+        return true;
     }
 
-    outPrimitive.objectId = 0;
-    outPrimitive.layerNameId = layerNameId;
-    outPrimitive.layerTypeId = layerTypeId;
-    outPrimitive.preview = false;
-    outPrimitive.polygonVertices = {
-        WorldPoint{anchorX, anchorY},
-        WorldPoint{currentX, anchorY},
-        WorldPoint{currentX, currentY},
-        WorldPoint{anchorX, currentY}
-    };
-    return true;
+    return false;
 }
 
 bool LayoutEditPreviewModel::tryBuildCommittedObject(const QString& activeTool,
