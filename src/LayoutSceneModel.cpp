@@ -6,6 +6,48 @@
 
 namespace {
 std::atomic<quint64> g_nextObjectId{1};
+
+bool isAxisAlignedSegment(const WorldPoint& a, const WorldPoint& b) {
+    return a.x == b.x || a.y == b.y;
+}
+
+QVector<WorldPoint> polygonForPath(const DrawnPath& path) {
+    QVector<WorldPoint> vertices;
+    if (path.points.size() < 2 || path.width <= 0) {
+        return vertices;
+    }
+
+    const qint64 half = path.width / 2;
+    for (int i = 0; i < path.points.size() - 1; ++i) {
+        const WorldPoint a = path.points[i];
+        const WorldPoint b = path.points[i + 1];
+        if (!isAxisAlignedSegment(a, b)) {
+            continue;
+        }
+
+        if (a.x == b.x) {
+            const qint64 minY = std::min(a.y, b.y);
+            const qint64 maxY = std::max(a.y, b.y);
+            const qint64 minX = a.x - half;
+            const qint64 maxX = a.x + half;
+            vertices.push_back(WorldPoint{minX, minY});
+            vertices.push_back(WorldPoint{maxX, minY});
+            vertices.push_back(WorldPoint{maxX, maxY});
+            vertices.push_back(WorldPoint{minX, maxY});
+        } else {
+            const qint64 minX = std::min(a.x, b.x);
+            const qint64 maxX = std::max(a.x, b.x);
+            const qint64 minY = a.y - half;
+            const qint64 maxY = a.y + half;
+            vertices.push_back(WorldPoint{minX, minY});
+            vertices.push_back(WorldPoint{maxX, minY});
+            vertices.push_back(WorldPoint{maxX, maxY});
+            vertices.push_back(WorldPoint{minX, maxY});
+        }
+    }
+
+    return vertices;
+}
 }
 
 LayoutObjectModel::LayoutObjectModel()
@@ -59,6 +101,95 @@ void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>&
         WorldPoint{maxX, maxY},
         WorldPoint{minX, maxY}
     };
+    outPrimitives.push_back(std::move(primitive));
+}
+
+PathObjectModel::PathObjectModel(const DrawnPath& path)
+    : m_path(path) {}
+
+bool PathObjectModel::containsPoint(qint64 x, qint64 y) const {
+    if (m_path.points.size() < 2 || m_path.width <= 0) {
+        return false;
+    }
+
+    const qint64 half = m_path.width / 2;
+    for (int i = 0; i < m_path.points.size() - 1; ++i) {
+        const WorldPoint a = m_path.points[i];
+        const WorldPoint b = m_path.points[i + 1];
+        if (!isAxisAlignedSegment(a, b)) {
+            continue;
+        }
+
+        if (a.x == b.x) {
+            const qint64 minX = a.x - half;
+            const qint64 maxX = a.x + half;
+            const qint64 minY = std::min(a.y, b.y);
+            const qint64 maxY = std::max(a.y, b.y);
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                return true;
+            }
+        } else {
+            const qint64 minX = std::min(a.x, b.x);
+            const qint64 maxX = std::max(a.x, b.x);
+            const qint64 minY = a.y - half;
+            const qint64 maxY = a.y + half;
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+const DrawnPath* PathObjectModel::asPath() const {
+    return &m_path;
+}
+
+void PathObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const {
+    if (m_path.points.size() < 2 || m_path.width <= 0) {
+        return;
+    }
+
+    const qint64 half = m_path.width / 2;
+    for (int i = 0; i < m_path.points.size() - 1; ++i) {
+        const WorldPoint a = m_path.points[i];
+        const WorldPoint b = m_path.points[i + 1];
+        if (!isAxisAlignedSegment(a, b)) {
+            continue;
+        }
+
+        if (a.x == b.x) {
+            const qint64 minY = std::min(a.y, b.y);
+            const qint64 maxY = std::max(a.y, b.y);
+            const qint64 minX = a.x - half;
+            const qint64 maxX = a.x + half;
+            outSegments.push_back(WorldLineSegment{minX, minY, maxX, minY});
+            outSegments.push_back(WorldLineSegment{maxX, minY, maxX, maxY});
+            outSegments.push_back(WorldLineSegment{maxX, maxY, minX, maxY});
+            outSegments.push_back(WorldLineSegment{minX, maxY, minX, minY});
+        } else {
+            const qint64 minX = std::min(a.x, b.x);
+            const qint64 maxX = std::max(a.x, b.x);
+            const qint64 minY = a.y - half;
+            const qint64 maxY = a.y + half;
+            outSegments.push_back(WorldLineSegment{minX, minY, maxX, minY});
+            outSegments.push_back(WorldLineSegment{maxX, minY, maxX, maxY});
+            outSegments.push_back(WorldLineSegment{maxX, maxY, minX, maxY});
+            outSegments.push_back(WorldLineSegment{minX, maxY, minX, minY});
+        }
+    }
+}
+
+void PathObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const {
+    SceneRenderPrimitive primitive;
+    primitive.objectId = objectId();
+    primitive.layerNameId = m_path.layerNameId;
+    primitive.layerTypeId = m_path.layerTypeId;
+    primitive.preview = false;
+    primitive.pathWidth = m_path.width;
+    primitive.pathPoints = m_path.points;
+    primitive.polygonVertices = polygonForPath(m_path);
     outPrimitives.push_back(std::move(primitive));
 }
 
@@ -194,24 +325,42 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
 }
 
 bool LayoutEditPreviewModel::tryBuildPreviewPrimitive(const QString& activeTool,
-                                                  const quint32 layerNameId,
-                                                  const quint32 layerTypeId,
-                                                  const qint64 anchorX,
-                                                  const qint64 anchorY,
-                                                  const qint64 currentX,
-                                                  const qint64 currentY,
-                                                  SceneRenderPrimitive& outPrimitive) {
+                                                      const quint32 layerNameId,
+                                                      const quint32 layerTypeId,
+                                                      const qint64 anchorX,
+                                                      const qint64 anchorY,
+                                                      const qint64 currentX,
+                                                      const qint64 currentY,
+                                                      SceneRenderPrimitive& outPrimitive) {
     if (activeTool == "rect") {
         outPrimitive.objectId = 0;
         outPrimitive.layerNameId = layerNameId;
         outPrimitive.layerTypeId = layerTypeId;
         outPrimitive.preview = true;
+        outPrimitive.pathWidth = 0;
+        outPrimitive.pathPoints.clear();
         outPrimitive.polygonVertices = {
             WorldPoint{anchorX, anchorY},
             WorldPoint{currentX, anchorY},
             WorldPoint{currentX, currentY},
             WorldPoint{anchorX, currentY}
         };
+        return true;
+    }
+
+    if (activeTool == "path") {
+        outPrimitive.objectId = 0;
+        outPrimitive.layerNameId = layerNameId;
+        outPrimitive.layerTypeId = layerTypeId;
+        outPrimitive.preview = true;
+        outPrimitive.pathWidth = 40;
+        outPrimitive.pathPoints = {
+            WorldPoint{anchorX, anchorY},
+            WorldPoint{currentX, anchorY},
+            WorldPoint{currentX, currentY}
+        };
+        const DrawnPath path{layerNameId, layerTypeId, outPrimitive.pathWidth, outPrimitive.pathPoints};
+        outPrimitive.polygonVertices = polygonForPath(path);
         return true;
     }
 
@@ -231,6 +380,8 @@ bool LayoutEditPreviewModel::tryBuildCommittedPrimitive(const QString& activeToo
         outPrimitive.layerNameId = layerNameId;
         outPrimitive.layerTypeId = layerTypeId;
         outPrimitive.preview = false;
+        outPrimitive.pathWidth = 0;
+        outPrimitive.pathPoints.clear();
         outPrimitive.polygonVertices = {
             WorldPoint{anchorX, anchorY},
             WorldPoint{currentX, anchorY},
@@ -240,24 +391,54 @@ bool LayoutEditPreviewModel::tryBuildCommittedPrimitive(const QString& activeToo
         return true;
     }
 
+    if (activeTool == "path") {
+        outPrimitive.objectId = 0;
+        outPrimitive.layerNameId = layerNameId;
+        outPrimitive.layerTypeId = layerTypeId;
+        outPrimitive.preview = false;
+        outPrimitive.pathWidth = 40;
+        outPrimitive.pathPoints = {
+            WorldPoint{anchorX, anchorY},
+            WorldPoint{currentX, anchorY},
+            WorldPoint{currentX, currentY}
+        };
+        const DrawnPath path{layerNameId, layerTypeId, outPrimitive.pathWidth, outPrimitive.pathPoints};
+        outPrimitive.polygonVertices = polygonForPath(path);
+        return true;
+    }
+
     return false;
 }
 
 bool LayoutEditPreviewModel::tryBuildCommittedObject(const QString& activeTool,
                                                      const SceneRenderPrimitive& primitive,
                                                      std::shared_ptr<LayoutObjectModel>& outObject) {
-    if (activeTool != "rect" || primitive.polygonVertices.size() != 4) {
-        return false;
+    if (activeTool == "rect") {
+        if (primitive.polygonVertices.size() != 4) {
+            return false;
+        }
+
+        const WorldPoint& anchor = primitive.polygonVertices[0];
+        const WorldPoint& current = primitive.polygonVertices[2];
+        const DrawnRectangle rectangle{primitive.layerNameId,
+                                       primitive.layerTypeId,
+                                       anchor.x,
+                                       anchor.y,
+                                       current.x,
+                                       current.y};
+        outObject = std::make_shared<RectangleObjectModel>(rectangle);
+        return true;
     }
 
-    const WorldPoint& anchor = primitive.polygonVertices[0];
-    const WorldPoint& current = primitive.polygonVertices[2];
-    const DrawnRectangle rectangle{primitive.layerNameId,
-                                   primitive.layerTypeId,
-                                   anchor.x,
-                                   anchor.y,
-                                   current.x,
-                                   current.y};
-    outObject = std::make_shared<RectangleObjectModel>(rectangle);
-    return true;
+    if (activeTool == "path") {
+        if (primitive.pathPoints.size() < 2 || primitive.pathWidth <= 0) {
+            return false;
+        }
+
+        DrawnPath path{primitive.layerNameId, primitive.layerTypeId, primitive.pathWidth, primitive.pathPoints};
+        outObject = std::make_shared<PathObjectModel>(path);
+        return true;
+    }
+
+    return false;
 }

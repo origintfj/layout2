@@ -28,6 +28,13 @@ struct WorldPoint {
     qint64 y;
 };
 
+struct DrawnPath {
+    quint32 layerNameId;
+    quint32 layerTypeId;
+    qint64 width;
+    QVector<WorldPoint> points;
+};
+
 // SceneRenderPrimitive describes one drawable scene primitive in world space.
 struct SceneRenderPrimitive {
     quint64 objectId;
@@ -35,4 +42,6 @@ struct SceneRenderPrimitive {
     quint32 layerTypeId;
     bool preview{false};
     QVector<WorldPoint> polygonVertices;
+    qint64 pathWidth{0};
+    QVector<WorldPoint> pathPoints;
 };

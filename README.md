@@ -47,7 +47,8 @@ layer configure <LayerName> <LayerType> -selectable 0|1
 tool set <toolName>
 ```
 
-- Sets the active tool string used by the editor (for example `select` or `rect`).
+- Sets the active tool string used by the editor (for example `select`, `rect`, or `path`).
+- `path` draws a Manhattan (horizontal/vertical) path with fixed width.
 
 ### `canvas` command family
 
@@ -58,10 +59,10 @@ canvas release <x:int64> <y:int64> <button>
 ```
 
 - `x`/`y` are signed 64-bit integer world coordinates.
-- Rectangle draw flow is Tcl-driven:
-  - `canvas press` starts preview when `tool` is `rect`, left button is `1`, and an active layer exists.
+- Rectangle/path draw flow is Tcl-driven:
+  - `canvas press` starts preview when a drawing tool (`rect` or `path`) is active, left button is `1`, and an active layer exists.
   - `canvas move` updates preview while `leftDown == 1`.
-  - `canvas release` commits the rectangle when `button == 1` and a draw is in progress.
+  - `canvas release` commits the current rectangle/path when `button == 1` and a draw is in progress.
 
 ### `view` command family
 

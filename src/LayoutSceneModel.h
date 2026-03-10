@@ -18,6 +18,7 @@ public:
 
     virtual bool containsPoint(qint64 x, qint64 y) const = 0;
     virtual const DrawnRectangle* asRectangle() const { return nullptr; }
+    virtual const DrawnPath* asPath() const { return nullptr; }
     virtual void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const = 0;
     virtual void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const = 0;
 
@@ -38,6 +39,19 @@ private:
     DrawnRectangle m_rectangle;
 };
 
+
+class PathObjectModel final : public LayoutObjectModel {
+public:
+    explicit PathObjectModel(const DrawnPath& path);
+
+    bool containsPoint(qint64 x, qint64 y) const override;
+    const DrawnPath* asPath() const override;
+    void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const override;
+    void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const override;
+
+private:
+    DrawnPath m_path;
+};
 
 namespace LayoutEditPreviewModel {
 bool tryBuildPreviewPrimitive(const QString& activeTool,

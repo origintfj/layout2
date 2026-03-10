@@ -354,8 +354,8 @@ private:
         return &m_layers[index];
     }
 
-    const LayerDefinition* layerForRectangle(const DrawnRectangle& rectangle) const {
-        const auto it = m_layerIndexByCode.constFind(layerCodeKey(rectangle.layerNameId, rectangle.layerTypeId));
+    const LayerDefinition* layerForIds(quint32 layerNameId, quint32 layerTypeId) const {
+        const auto it = m_layerIndexByCode.constFind(layerCodeKey(layerNameId, layerTypeId));
         if (it == m_layerIndexByCode.cend()) {
             return nullptr;
         }
@@ -378,7 +378,12 @@ private:
     }
 
     bool isSelectableRectangle(const DrawnRectangle& rectangle) const {
-        const LayerDefinition* layer = layerForRectangle(rectangle);
+        const LayerDefinition* layer = layerForIds(rectangle.layerNameId, rectangle.layerTypeId);
+        return layer && layer->visible && layer->selectable;
+    }
+
+    bool isSelectablePath(const DrawnPath& path) const {
+        const LayerDefinition* layer = layerForIds(path.layerNameId, path.layerTypeId);
         return layer && layer->visible && layer->selectable;
     }
 
@@ -392,8 +397,15 @@ private:
             return false;
         }
 
-        const DrawnRectangle* rectangle = object->asRectangle();
-        return rectangle && isSelectableRectangle(*rectangle);
+        if (const DrawnRectangle* rectangle = object->asRectangle()) {
+            return isSelectableRectangle(*rectangle);
+        }
+
+        if (const DrawnPath* path = object->asPath()) {
+            return isSelectablePath(*path);
+        }
+
+        return false;
     }
 
     QVector<SceneRenderPrimitive> flattenedRenderPrimitives() const {
@@ -419,8 +431,13 @@ private:
             x,
             y,
             [this](const LayoutObjectModel& object) {
-                const DrawnRectangle* rectangle = object.asRectangle();
-                return rectangle && isSelectableRectangle(*rectangle);
+                if (const DrawnRectangle* rectangle = object.asRectangle()) {
+                    return isSelectableRectangle(*rectangle);
+                }
+                if (const DrawnPath* path = object.asPath()) {
+                    return isSelectablePath(*path);
+                }
+                return false;
             });
         if (objectMatches.isEmpty()) {
             return candidates;

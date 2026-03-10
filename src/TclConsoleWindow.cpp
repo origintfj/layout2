@@ -795,8 +795,8 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        // Rectangle tool starts preview only for left button and valid active layer.
-        if (button == 1 && session->activeTool == "rect" && !session->activeLayerName.isEmpty()) {
+        // Drawing tools start preview only for left button and valid active layer.
+        if (button == 1 && !session->activeLayerName.isEmpty()) {
             auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
                                    [session](const LayerDefinition& layer) {
                                        return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
@@ -808,12 +808,25 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
                 return TCL_ERROR;
             }
 
-            session->editInProgress = true;
             session->editAnchorX = x;
             session->editAnchorY = y;
             session->editLayerNameId = it->nameId;
             session->editLayerTypeId = it->typeId;
 
+            if (!LayoutEditPreviewModel::tryBuildPreviewPrimitive(session->activeTool,
+                                                                  session->editLayerNameId,
+                                                                  session->editLayerTypeId,
+                                                                  session->editAnchorX,
+                                                                  session->editAnchorY,
+                                                                  x,
+                                                                  y,
+                                                                  session->editPreview)) {
+                session->editInProgress = false;
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+                return TCL_OK;
+            }
+
+            session->editInProgress = true;
             if (LayoutEditPreviewModel::tryBuildPreviewPrimitive(session->activeTool,
                                                                  session->editLayerNameId,
                                                                  session->editLayerTypeId,

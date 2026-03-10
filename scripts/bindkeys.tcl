@@ -13,3 +13,5 @@ bindkey set R {tool set rect}
 #bindkey set S {tool set select}
 bindkey set Esc {tool set select}
 bindkey set Shift+R {tool set rect}
+
+bindkey set P {tool set path}
