@@ -132,6 +132,7 @@ public:
     void setLayers(const QVector<LayerDefinition>& layers) {
         m_layers = layers;
         rebuildLayerLookup();
+        m_fillBrushCache.clear();
         validateSelection();
         validateHover();
         update();
@@ -325,8 +326,20 @@ private:
         }
 
         painter.setPen(QPen(outlineColor, 1, primitive.preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(patternBrushFor(fillColor, layer->pattern));
+        painter.setBrush(brushForFillColor(fillColor, layer->pattern));
         painter.drawPolygon(polygon);
+    }
+
+    QBrush brushForFillColor(const QColor& fillColor, const QString& pattern) {
+        const QString cacheKey = QString("%1|%2").arg(fillColor.name(QColor::HexArgb), pattern);
+        const auto it = m_fillBrushCache.constFind(cacheKey);
+        if (it != m_fillBrushCache.cend()) {
+            return it.value();
+        }
+
+        const QBrush brush = patternBrushFor(fillColor, pattern);
+        m_fillBrushCache.insert(cacheKey, brush);
+        return brush;
     }
 
     void drawHoverOutline(QPainter& painter, const QVector<WorldLineSegment>& segments) {
@@ -399,7 +412,12 @@ private:
     QVector<SceneRenderPrimitive> flattenedRenderPrimitives() const {
         QVector<SceneRenderPrimitive> primitives;
         if (m_rootCell) {
-            m_rootCell->collectRenderPrimitives(primitives);
+            qint64 minX = 0;
+            qint64 minY = 0;
+            qint64 maxX = 0;
+            qint64 maxY = 0;
+            visibleWorldBounds(minX, minY, maxX, maxY);
+            m_rootCell->collectRenderPrimitivesInRect(minX, minY, maxX, maxY, primitives);
         }
 
         if (m_editPreviewEnabled) {
@@ -407,6 +425,16 @@ private:
         }
 
         return primitives;
+    }
+
+    void visibleWorldBounds(qint64& minX, qint64& minY, qint64& maxX, qint64& maxY) const {
+        const QPointF topLeftWorld = screenToWorld(QPointF(0.0, 0.0));
+        const QPointF bottomRightWorld = screenToWorld(QPointF(width(), height()));
+
+        minX = static_cast<qint64>(std::floor(std::min(topLeftWorld.x(), bottomRightWorld.x())));
+        maxX = static_cast<qint64>(std::ceil(std::max(topLeftWorld.x(), bottomRightWorld.x())));
+        minY = static_cast<qint64>(std::floor(std::min(topLeftWorld.y(), bottomRightWorld.y())));
+        maxY = static_cast<qint64>(std::ceil(std::max(topLeftWorld.y(), bottomRightWorld.y())));
     }
 
     QVector<quint64> selectableObjectCandidatesAt(qint64 x, qint64 y) const {
@@ -534,6 +562,7 @@ private:
     const LayoutSceneNode* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
+    QHash<QString, QBrush> m_fillBrushCache;
     SceneRenderPrimitive m_editPreview;
     QString m_activeTool{"none"};
 

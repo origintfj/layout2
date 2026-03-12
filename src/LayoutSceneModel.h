@@ -2,6 +2,8 @@
 
 #include <QVector>
 #include <QString>
+#include <QHash>
+#include <QSet>
 #include <functional>
 #include <memory>
 
@@ -69,6 +71,11 @@ public:
 
     void collectRectangles(QVector<const DrawnRectangle*>& outRectangles) const;
     void collectRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const;
+    void collectRenderPrimitivesInRect(qint64 minX,
+                                       qint64 minY,
+                                       qint64 maxX,
+                                       qint64 maxY,
+                                       QVector<SceneRenderPrimitive>& outPrimitives) const;
     void collectObjects(QVector<const LayoutObjectModel*>& outObjects) const;
     QVector<quint64> matchingObjectIdsAt(qint64 x,
                                          qint64 y,
@@ -77,11 +84,41 @@ public:
     const LayoutObjectModel* findObjectById(quint64 objectId) const;
     bool removeObjectById(quint64 objectId);
 private:
+    struct ObjectBounds {
+        qint64 minX{0};
+        qint64 minY{0};
+        qint64 maxX{0};
+        qint64 maxY{0};
+    };
+
+    static constexpr qint64 kSpatialTileSize = 2048;
+
+    static bool tryRectangleBounds(const LayoutObjectModel& object, ObjectBounds& outBounds);
+    static bool boundsContainPoint(const ObjectBounds& bounds, qint64 x, qint64 y);
+    static bool boundsIntersectRect(const ObjectBounds& bounds,
+                                    qint64 minX,
+                                    qint64 minY,
+                                    qint64 maxX,
+                                    qint64 maxY);
+    static qint64 tileCoordFor(qint64 coordinate);
+    static quint64 tileKey(qint64 tileX, qint64 tileY);
+
+    void indexObject(const std::shared_ptr<LayoutObjectModel>& object);
+    void deindexObject(quint64 objectId);
+    void collectCandidateObjectIdsInRect(qint64 minX,
+                                         qint64 minY,
+                                         qint64 maxX,
+                                         qint64 maxY,
+                                         QSet<quint64>& outCandidateIds) const;
+
     bool collectOutlineSegmentsByObjectIdRecursive(quint64 objectId,
                                                    QVector<WorldLineSegment>& outSegments) const;
-    const LayoutObjectModel* findObjectByIdRecursive(quint64 objectId) const;
     bool removeObjectByIdRecursive(quint64 objectId);
 
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
     QVector<std::shared_ptr<LayoutSceneNode>> m_children;
+    QHash<quint64, std::shared_ptr<LayoutObjectModel>> m_objectById;
+    QHash<quint64, ObjectBounds> m_objectBoundsById;
+    QHash<quint64, QVector<quint64>> m_tileObjectIds;
+    QHash<quint64, QVector<quint64>> m_objectTileKeys;
 };
