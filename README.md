@@ -231,7 +231,7 @@ export LAYOUT2_RENDER_BACKEND=opengl
 
 Current status:
 - `raster`: full current rendering path.
-- `opengl`: uses a `QOpenGLWidget` canvas path with GPU triangle/line submission for simplified/coarse levels; detailed level draws exact layer stipple patterns via painter brushes.
+- `opengl`: uses a `QOpenGLWidget` canvas path with GPU triangle/line submission across detail levels; detailed level applies the layer stipple pattern in the GL fragment path for parity.
 
 Optional diagnostics:
 

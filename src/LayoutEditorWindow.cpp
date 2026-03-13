@@ -3,6 +3,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <array>
 #include <algorithm>
 #include <QFrame>
 #include <QHash>
@@ -79,6 +80,23 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
     return QBrush(pixmap);
 }
 
+std::array<float, 8> patternRowsFor(const QString& pattern) {
+    std::array<float, 8> rows{};
+    bool ok = false;
+    const quint64 patternValue = static_cast<quint64>(pattern.toULongLong(&ok, 0));
+    if (!ok) {
+        rows.fill(255.0f);
+        return rows;
+    }
+
+    for (int y = 0; y < 8; ++y) {
+        const quint64 rowBits = (patternValue >> (y * 8)) & 0xFFULL;
+        rows[static_cast<size_t>(y)] = static_cast<float>(rowBits);
+    }
+
+    return rows;
+}
+
 quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
     return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
 }
@@ -102,6 +120,7 @@ public:
         QColor fillColor;
         QColor outlineColor;
         QBrush patternBrush;
+        QString pattern;
         bool selected{false};
         bool preview{false};
         bool tinyOnScreen{false};
@@ -161,8 +180,8 @@ public:
 };
 
 // OpenGL backend:
-// - detailed patterned mode remains painter-based for visual parity,
-// - simplified/coarse modes submit triangles (and selection outlines) via GL.
+// - detailed/simplified/coarse modes all submit geometry via GL,
+// - detailed mode applies layer stipple in fragment shader for parity.
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
     OpenGLPrimitiveRenderBackend()
@@ -191,17 +210,7 @@ public:
             m_geometryDirty = true;
         }
 
-        for (const RenderItem& item : items) {
-            if (item.detailLevel != 0) {
-                continue;
-            }
-
-            painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
-            painter.setBrush(item.patternBrush);
-            painter.drawPolygon(item.polygon);
-        }
-
-        if (m_cachedTriangleVertexData.isEmpty() && m_cachedLineVertexData.isEmpty()) {
+        if (m_cachedTriangleVertexData.isEmpty() && m_cachedLineVertexData.isEmpty() && m_cachedDetailedItems.isEmpty()) {
             return;
         }
 
@@ -209,22 +218,25 @@ public:
         m_program.bind();
         m_program.setUniformValue("uViewport", QVector2D(viewportSize.width(), viewportSize.height()));
 
+        constexpr int stride = 6 * static_cast<int>(sizeof(float));
+        m_program.enableAttributeArray(0);
+        m_program.enableAttributeArray(1);
+
+        QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
+        gl->glDisable(GL_DEPTH_TEST);
+        gl->glEnable(GL_BLEND);
+        gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        m_program.setUniformValue("uUseStipple", 0.0f);
         m_vertexBuffer.bind();
         if (m_geometryDirty) {
             uploadVertexData(m_cachedTriangleVertexData, m_cachedLineVertexData);
             m_geometryDirty = false;
         }
 
-        constexpr int stride = 6 * static_cast<int>(sizeof(float));
-        m_program.enableAttributeArray(0);
         m_program.setAttributeBuffer(0, GL_FLOAT, 0, 2, stride);
-        m_program.enableAttributeArray(1);
         m_program.setAttributeBuffer(1, GL_FLOAT, 2 * static_cast<int>(sizeof(float)), 4, stride);
 
-        QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
-        gl->glDisable(GL_DEPTH_TEST);
-        gl->glEnable(GL_BLEND);
-        gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         const int triangleVertexCount = static_cast<int>(m_cachedTriangleVertexData.size() / 6);
         if (triangleVertexCount > 0) {
             gl->glDrawArrays(GL_TRIANGLES, 0, triangleVertexCount);
@@ -235,10 +247,12 @@ public:
             gl->glLineWidth(2.0f);
             gl->glDrawArrays(GL_LINES, triangleVertexCount, lineVertexCount);
         }
+        m_vertexBuffer.release();
+
+        drawDetailedItemsWithGl(gl, stride);
 
         m_program.disableAttributeArray(0);
         m_program.disableAttributeArray(1);
-        m_vertexBuffer.release();
         m_program.release();
         painter.endNativePainting();
 
@@ -319,6 +333,8 @@ private:
             const QRectF bounds = item.polygon.boundingRect();
             hash ^= static_cast<quint64>(item.fillColor.rgba64().toArgb32());
             hash *= 1099511628211ULL;
+            hash ^= static_cast<quint64>(qHash(item.pattern));
+            hash *= 1099511628211ULL;
             hash ^= static_cast<quint64>((item.detailLevel & 0xff)
                                          | ((item.selected ? 1 : 0) << 8)
                                          | ((item.preview ? 1 : 0) << 9));
@@ -343,6 +359,7 @@ private:
         m_cachedLineVertexData.reserve(items.size() * 24);
         m_cachedTinySkipped = 0;
         m_cachedDetailedPainterCount = 0;
+        m_cachedDetailedItems.clear();
 
         QHash<QRgb, QVector<const RenderItem*>> styleBuckets;
         styleBuckets.reserve(std::max(8, items.size() / 32));
@@ -355,6 +372,7 @@ private:
 
             if (item.detailLevel == 0) {
                 ++m_cachedDetailedPainterCount;
+                m_cachedDetailedItems.push_back(item);
                 continue;
             }
 
@@ -402,6 +420,91 @@ private:
                 }
             }
         }
+    }
+
+    void appendPolygonTriangles(QVector<float>& out,
+                               const QPolygonF& polygon,
+                               const QColor& color) {
+        const int vertexCount = polygon.size();
+        if (vertexCount < 3) {
+            return;
+        }
+
+        const float r = color.redF();
+        const float g = color.greenF();
+        const float b = color.blueF();
+        const float a = color.alphaF();
+        const QPointF origin = polygon[0];
+        for (int i = 1; i < vertexCount - 1; ++i) {
+            const QPointF p1 = polygon[i];
+            const QPointF p2 = polygon[i + 1];
+            appendVertex(out, origin.x(), origin.y(), r, g, b, a);
+            appendVertex(out, p1.x(), p1.y(), r, g, b, a);
+            appendVertex(out, p2.x(), p2.y(), r, g, b, a);
+        }
+    }
+
+    void drawDetailedItemsWithGl(QOpenGLFunctions* gl, const int stride) {
+        if (!gl || m_cachedDetailedItems.isEmpty()) {
+            return;
+        }
+
+        if (!m_detailVertexBuffer.isCreated() && !m_detailVertexBuffer.create()) {
+            return;
+        }
+
+        QVector<float> triangleVertices;
+        QVector<float> lineVertices;
+        for (const RenderItem& item : m_cachedDetailedItems) {
+            triangleVertices.clear();
+            lineVertices.clear();
+            appendPolygonTriangles(triangleVertices, item.polygon, item.fillColor);
+            if (item.selected) {
+                appendOutlineSegments(lineVertices, item.polygon, item.outlineColor);
+            }
+
+            const qsizetype totalFloats = triangleVertices.size() + lineVertices.size();
+            if (totalFloats <= 0) {
+                continue;
+            }
+
+            const qsizetype totalBytes = totalFloats * static_cast<qsizetype>(sizeof(float));
+            m_detailVertexBuffer.bind();
+            m_detailVertexBuffer.allocate(static_cast<int>(totalBytes));
+            qsizetype byteOffset = 0;
+            if (!triangleVertices.isEmpty()) {
+                const qsizetype bytes = triangleVertices.size() * static_cast<qsizetype>(sizeof(float));
+                m_detailVertexBuffer.write(byteOffset, triangleVertices.constData(), static_cast<int>(bytes));
+                byteOffset += bytes;
+            }
+            if (!lineVertices.isEmpty()) {
+                const qsizetype bytes = lineVertices.size() * static_cast<qsizetype>(sizeof(float));
+                m_detailVertexBuffer.write(byteOffset, lineVertices.constData(), static_cast<int>(bytes));
+            }
+
+            m_program.setAttributeBuffer(0, GL_FLOAT, 0, 2, stride);
+            m_program.setAttributeBuffer(1, GL_FLOAT, 2 * static_cast<int>(sizeof(float)), 4, stride);
+
+            const std::array<float, 8> rows = patternRowsFor(item.pattern);
+            m_program.setUniformValue("uUseStipple", 1.0f);
+            m_program.setUniformValueArray("uPatternRows", rows.data(), 8, 1);
+
+            const int triangleVertexCount = static_cast<int>(triangleVertices.size() / 6);
+            if (triangleVertexCount > 0) {
+                gl->glDrawArrays(GL_TRIANGLES, 0, triangleVertexCount);
+            }
+
+            const int lineVertexCount = static_cast<int>(lineVertices.size() / 6);
+            if (lineVertexCount > 0) {
+                m_program.setUniformValue("uUseStipple", 0.0f);
+                gl->glLineWidth(1.0f);
+                gl->glDrawArrays(GL_LINES, triangleVertexCount, lineVertexCount);
+            }
+
+            m_detailVertexBuffer.release();
+        }
+
+        m_program.setUniformValue("uUseStipple", 0.0f);
     }
 
     void uploadVertexData(const QVector<float>& triangleVertexData,
@@ -462,7 +565,21 @@ private:
 
         const char* fragmentShader = R"(
             varying vec4 vColor;
+            uniform float uUseStipple;
+            uniform float uPatternRows[8];
             void main() {
+                if (uUseStipple > 0.5) {
+                    float x = mod(floor(gl_FragCoord.x), 16.0);
+                    float y = mod(floor(gl_FragCoord.y), 16.0);
+                    int bitX = int(floor(x * 0.5));
+                    int bitY = int(floor(y * 0.5));
+                    float row = uPatternRows[bitY];
+                    float divisor = exp2(float(bitX));
+                    float bit = mod(floor(row / divisor), 2.0);
+                    if (bit < 0.5) {
+                        discard;
+                    }
+                }
                 gl_FragColor = vColor;
             }
         )";
@@ -486,6 +603,13 @@ private:
             return false;
         }
 
+        if (m_detailVertexBuffer.isCreated()) {
+            m_detailVertexBuffer.destroy();
+        }
+        if (!m_detailVertexBuffer.create()) {
+            return false;
+        }
+
         m_initialized = true;
         return true;
     }
@@ -493,12 +617,14 @@ private:
     bool m_initialized{false};
     QOpenGLShaderProgram m_program;
     QOpenGLBuffer m_vertexBuffer;
+    QOpenGLBuffer m_detailVertexBuffer;
     qsizetype m_vertexCapacityBytes{0};
     bool m_geometryDirty{true};
     quint64 m_cachedGeometryHash{0};
     QSize m_cachedViewportSize;
     QVector<float> m_cachedTriangleVertexData;
     QVector<float> m_cachedLineVertexData;
+    QVector<RenderItem> m_cachedDetailedItems;
     quint64 m_cachedTinySkipped{0};
     quint64 m_cachedDetailedPainterCount{0};
     bool m_statsEnabled{false};
@@ -800,6 +926,7 @@ private:
                 item.outlineColor.setAlpha(255);
             }
 
+            item.pattern = layer->pattern;
             item.patternBrush = brushForFillColor(item.fillColor, layer->pattern);
             items.push_back(std::move(item));
         }
