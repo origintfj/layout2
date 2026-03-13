@@ -13,6 +13,8 @@
 #include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QOpenGLFunctions>
+#include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
 #include <QPolygonF>
@@ -153,7 +155,8 @@ public:
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
     void beginFrame(QPainter& painter, const QColor& clearColor) override {
-        painter.fillRect(painter.viewport(), clearColor);
+        Q_UNUSED(painter);
+        Q_UNUSED(clearColor);
     }
 
     void drawPrimitives(QPainter& painter, const QVector<RenderItem>& items) override {
@@ -206,14 +209,15 @@ QString keySpecFromEvent(const QKeyEvent* event) {
 //
 // It is intentionally thin: all interactions are converted into Tcl command
 // strings and emitted upward via commandRequested().
-class LayoutCanvas : public QWidget {
+class LayoutCanvas : public QOpenGLWidget {
     Q_OBJECT
 public:
     explicit LayoutCanvas(QWidget* parent = nullptr)
-        : QWidget(parent),
+        : QOpenGLWidget(parent),
           m_backendType(backendTypeFromEnv()) {
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
+        setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 
         if (m_backendType == CanvasRenderBackendType::OpenGL) {
             m_renderBackend = std::make_unique<OpenGLPrimitiveRenderBackend>();
@@ -271,7 +275,16 @@ protected:
         Coarse
     };
 
-    void paintEvent(QPaintEvent*) override {
+    void paintGL() override {
+        if (m_backendType == CanvasRenderBackendType::OpenGL) {
+            if (QOpenGLContext* ctx = context()) {
+                if (QOpenGLFunctions* gl = ctx->functions()) {
+                    gl->glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+                    gl->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                }
+            }
+        }
+
         QPainter painter(this);
 
         // Background and world-anchored grid for orientation.
@@ -313,7 +326,7 @@ protected:
             return;
         }
 
-        QWidget::keyPressEvent(event);
+        QOpenGLWidget::keyPressEvent(event);
     }
 
     void mousePressEvent(QMouseEvent* event) override {
@@ -339,7 +352,7 @@ protected:
             m_middlePanning = true;
         }
 
-        QWidget::mousePressEvent(event);
+        QOpenGLWidget::mousePressEvent(event);
     }
 
     void mouseMoveEvent(QMouseEvent* event) override {
@@ -371,7 +384,7 @@ protected:
                                 false);
         }
 
-        QWidget::mouseMoveEvent(event);
+        QOpenGLWidget::mouseMoveEvent(event);
     }
 
     void leaveEvent(QEvent* event) override {
@@ -380,7 +393,7 @@ protected:
             m_hoveredObjectId = 0;
             update();
         }
-        QWidget::leaveEvent(event);
+        QOpenGLWidget::leaveEvent(event);
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override {
@@ -396,7 +409,7 @@ protected:
             m_middlePanning = false;
         }
 
-        QWidget::mouseReleaseEvent(event);
+        QOpenGLWidget::mouseReleaseEvent(event);
     }
 
     void wheelEvent(QWheelEvent* event) override {
