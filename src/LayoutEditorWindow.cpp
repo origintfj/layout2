@@ -90,59 +90,60 @@ class PrimitiveRenderBackend {
 public:
     virtual ~PrimitiveRenderBackend() = default;
 
-    virtual void drawPrimitive(QPainter& painter,
-                               const QPolygonF& polygon,
-                               const LayerDefinition& layer,
-                               bool preview,
-                               bool selected,
-                               const QString& pattern,
-                               const QBrush& cachedPatternBrush,
-                               int detailLevel) = 0;
+    struct RenderItem {
+        QPolygonF polygon;
+        QColor fillColor;
+        QColor outlineColor;
+        QBrush patternBrush;
+        bool selected{false};
+        bool preview{false};
+        bool tinyOnScreen{false};
+        int detailLevel{0};
+    };
+
+    virtual void beginFrame(QPainter& painter, const QColor& clearColor) = 0;
+
+    virtual void drawPrimitives(QPainter& painter,
+                                const QVector<RenderItem>& items) = 0;
+
+    virtual void endFrame(QPainter& painter) = 0;
 };
 
 class RasterPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
-    void drawPrimitive(QPainter& painter,
-                       const QPolygonF& polygon,
-                       const LayerDefinition& layer,
-                       const bool preview,
-                       const bool selected,
-                       const QString& pattern,
-                       const QBrush& cachedPatternBrush,
-                       const int detailLevel) override {
-        Q_UNUSED(pattern);
+    void beginFrame(QPainter& painter, const QColor& clearColor) override {
+        painter.fillRect(painter.viewport(), clearColor);
+    }
 
-        QColor fillColor = layer.color;
-        if (selected) {
-            fillColor = fillColor.lighter(130);
+    void drawPrimitives(QPainter& painter, const QVector<RenderItem>& items) override {
+        for (const RenderItem& item : items) {
+            if (item.detailLevel == 2 && item.tinyOnScreen && !item.selected) {
+                continue;
+            }
+
+            if (item.detailLevel == 0) {
+                painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
+                painter.setBrush(item.patternBrush);
+            } else if (item.detailLevel == 1) {
+                painter.setPen(item.selected
+                                   ? QPen(item.outlineColor, 1, Qt::SolidLine)
+                                   : QPen(item.outlineColor, 0, Qt::NoPen));
+                painter.setBrush(QBrush(item.fillColor, Qt::SolidPattern));
+            } else {
+                painter.setPen(item.selected
+                                   ? QPen(item.outlineColor, 1, Qt::SolidLine)
+                                   : QPen(item.outlineColor, 0, Qt::NoPen));
+                QColor coarseFill = item.fillColor;
+                coarseFill.setAlpha(std::min(255, item.fillColor.alpha() + 50));
+                painter.setBrush(QBrush(coarseFill, Qt::SolidPattern));
+            }
+
+            painter.drawPolygon(item.polygon);
         }
-        fillColor.setAlpha(preview ? 90 : 140);
+    }
 
-        QColor outlineColor = layer.color;
-        outlineColor.setAlpha(preview ? 180 : 220);
-        if (selected) {
-            outlineColor = QColor("#ffffff");
-            outlineColor.setAlpha(255);
-        }
-
-        if (detailLevel == 0) {
-            painter.setPen(QPen(outlineColor, 1, preview ? Qt::DashLine : Qt::SolidLine));
-            painter.setBrush(cachedPatternBrush);
-        } else if (detailLevel == 1) {
-            painter.setPen(selected
-                               ? QPen(outlineColor, 1, Qt::SolidLine)
-                               : QPen(outlineColor, 0, Qt::NoPen));
-            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
-        } else {
-            painter.setPen(selected
-                               ? QPen(outlineColor, 1, Qt::SolidLine)
-                               : QPen(outlineColor, 0, Qt::NoPen));
-            QColor coarseFill = fillColor;
-            coarseFill.setAlpha(std::min(255, fillColor.alpha() + 50));
-            painter.setBrush(QBrush(coarseFill, Qt::SolidPattern));
-        }
-
-        painter.drawPolygon(polygon);
+    void endFrame(QPainter& painter) override {
+        Q_UNUSED(painter);
     }
 };
 
@@ -151,29 +152,32 @@ public:
 // while enabling runtime backend selection and future GPU implementation.
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
-    void drawPrimitive(QPainter& painter,
-                       const QPolygonF& polygon,
-                       const LayerDefinition& layer,
-                       const bool preview,
-                       const bool selected,
-                       const QString& pattern,
-                       const QBrush& cachedPatternBrush,
-                       const int detailLevel) override {
-        Q_UNUSED(pattern);
-        Q_UNUSED(cachedPatternBrush);
-        Q_UNUSED(detailLevel);
+    void beginFrame(QPainter& painter, const QColor& clearColor) override {
+        painter.fillRect(painter.viewport(), clearColor);
+    }
 
-        QColor fillColor = layer.color;
-        fillColor.setAlpha(preview ? 96 : 156);
-        if (selected) {
-            fillColor = fillColor.lighter(120);
+    void drawPrimitives(QPainter& painter, const QVector<RenderItem>& items) override {
+        for (const RenderItem& item : items) {
+            if (item.tinyOnScreen && !item.selected) {
+                continue;
+            }
+
+            QColor fillColor = item.fillColor;
+            fillColor.setAlpha(item.preview ? 96 : 156);
+            if (item.selected) {
+                fillColor = fillColor.lighter(120);
+            }
+
+            QColor outlineColor = item.selected ? QColor("#ffffff") : item.outlineColor;
+            outlineColor.setAlpha(item.selected ? 255 : 190);
+            painter.setPen(QPen(outlineColor, item.selected ? 2 : 0, item.selected ? Qt::SolidLine : Qt::NoPen));
+            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
+            painter.drawPolygon(item.polygon);
         }
+    }
 
-        QColor outlineColor = selected ? QColor("#ffffff") : layer.color;
-        outlineColor.setAlpha(selected ? 255 : 190);
-        painter.setPen(QPen(outlineColor, selected ? 2 : 0, selected ? Qt::SolidLine : Qt::NoPen));
-        painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
-        painter.drawPolygon(polygon);
+    void endFrame(QPainter& painter) override {
+        Q_UNUSED(painter);
     }
 };
 } // namespace
@@ -271,18 +275,15 @@ protected:
         QPainter painter(this);
 
         // Background and world-anchored grid for orientation.
-        painter.fillRect(rect(), QColor("#000000"));
+        m_renderBackend->beginFrame(painter, QColor("#000000"));
         drawGrid(painter);
 
         // Draw committed geometry first from model-provided primitives.
         const RenderDetailLevel detailLevel = currentDetailLevel();
         const QVector<SceneRenderPrimitive> primitives = flattenedRenderPrimitives();
-        for (int i = 0; i < primitives.size(); ++i) {
-            drawPrimitive(painter,
-                          primitives[i],
-                          primitives[i].objectId == m_selectedObjectId,
-                          detailLevel);
-        }
+        const QVector<PrimitiveRenderBackend::RenderItem> renderItems =
+            buildRenderItems(primitives, detailLevel);
+        m_renderBackend->drawPrimitives(painter, renderItems);
 
         if (m_activeTool == "select" && m_hoveredObjectId != 0 && m_rootCell) {
             QVector<WorldLineSegment> previewSegments;
@@ -290,6 +291,8 @@ protected:
                 drawHoverOutline(painter, previewSegments);
             }
         }
+
+        m_renderBackend->endFrame(painter);
 
     }
 
@@ -419,48 +422,50 @@ private:
                        (m_panY - p.y()) / m_zoom);
     }
 
-    void drawPrimitive(QPainter& painter,
-                       const SceneRenderPrimitive& primitive,
-                       const bool selected,
-                       const RenderDetailLevel detailLevel) {
-        const LayerDefinition* layer = layerForPrimitive(primitive);
-        if (!layer || !layer->visible || primitive.polygonVertices.isEmpty()) {
-            return;
-        }
+    QVector<PrimitiveRenderBackend::RenderItem> buildRenderItems(
+        const QVector<SceneRenderPrimitive>& primitives,
+        const RenderDetailLevel detailLevel) {
+        QVector<PrimitiveRenderBackend::RenderItem> items;
+        items.reserve(primitives.size());
 
-        QPolygonF polygon;
-        polygon.reserve(primitive.polygonVertices.size());
-        for (const WorldPoint& vertex : primitive.polygonVertices) {
-            polygon.push_back(worldToScreen(vertex.x, vertex.y));
-        }
+        for (const SceneRenderPrimitive& primitive : primitives) {
+            const LayerDefinition* layer = layerForPrimitive(primitive);
+            if (!layer || !layer->visible || primitive.polygonVertices.isEmpty()) {
+                continue;
+            }
 
-        const QRectF polygonBounds = polygon.boundingRect();
-        const bool tinyOnScreen = polygonBounds.width() < 1.0 && polygonBounds.height() < 1.0;
-        if (detailLevel == RenderDetailLevel::Coarse && tinyOnScreen && !selected) {
-            return;
-        }
+            PrimitiveRenderBackend::RenderItem item;
+            item.polygon.reserve(primitive.polygonVertices.size());
+            for (const WorldPoint& vertex : primitive.polygonVertices) {
+                item.polygon.push_back(worldToScreen(vertex.x, vertex.y));
+            }
 
-        const int detailCode = detailLevel == RenderDetailLevel::Detailed
+            item.selected = primitive.objectId == m_selectedObjectId;
+            item.preview = primitive.preview;
+            item.detailLevel = detailLevel == RenderDetailLevel::Detailed
                                    ? 0
                                    : detailLevel == RenderDetailLevel::Simplified ? 1 : 2;
-        const QColor fillColor = [layer, primitive, selected]() {
-            QColor color = layer->color;
-            if (selected) {
-                color = color.lighter(130);
-            }
-            color.setAlpha(primitive.preview ? 90 : 140);
-            return color;
-        }();
-        const QBrush cachedBrush = brushForFillColor(fillColor, layer->pattern);
+            item.tinyOnScreen = item.polygon.boundingRect().width() < 1.0
+                                && item.polygon.boundingRect().height() < 1.0;
 
-        m_renderBackend->drawPrimitive(painter,
-                                       polygon,
-                                       *layer,
-                                       primitive.preview,
-                                       selected,
-                                       layer->pattern,
-                                       cachedBrush,
-                                       detailCode);
+            item.fillColor = layer->color;
+            if (item.selected) {
+                item.fillColor = item.fillColor.lighter(130);
+            }
+            item.fillColor.setAlpha(item.preview ? 90 : 140);
+
+            item.outlineColor = layer->color;
+            item.outlineColor.setAlpha(item.preview ? 180 : 220);
+            if (item.selected) {
+                item.outlineColor = QColor("#ffffff");
+                item.outlineColor.setAlpha(255);
+            }
+
+            item.patternBrush = brushForFillColor(item.fillColor, layer->pattern);
+            items.push_back(std::move(item));
+        }
+
+        return items;
     }
 
     RenderDetailLevel currentDetailLevel() const {
