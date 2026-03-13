@@ -231,7 +231,7 @@ export LAYOUT2_RENDER_BACKEND=opengl
 
 Current status:
 - `raster`: full current rendering path.
-- `opengl`: uses a `QOpenGLWidget` canvas path, OpenGL framebuffer clears, and GPU triangle submission for simplified/coarse primitives (detailed patterned mode still uses painter path).
+- `opengl`: uses a `QOpenGLWidget` canvas path, OpenGL framebuffer clears, and GPU triangle/line submission across detail levels; detailed mode uses shader-based pattern approximation.
 
 Optional diagnostics:
 

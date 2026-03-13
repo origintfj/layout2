@@ -102,6 +102,7 @@ public:
         QColor fillColor;
         QColor outlineColor;
         QBrush patternBrush;
+        float patternSeed{0.0F};
         bool selected{false};
         bool preview{false};
         bool tinyOnScreen{false};
@@ -179,7 +180,7 @@ public:
                         const QSize& viewportSize) override {
         if (!initializeGlResources()) {
             // Fallback to painter-only rendering if GL setup fails.
-            drawDetailedWithPainter(painter, items);
+            drawWithPainterFallback(painter, items);
             return;
         }
 
@@ -192,7 +193,7 @@ public:
         styleBuckets.reserve(std::max(8, items.size() / 32));
 
         int skippedTinyCount = 0;
-        int painterDetailedCount = 0;
+        int detailedGpuCount = 0;
 
         for (const RenderItem& item : items) {
             if (item.tinyOnScreen && !item.selected) {
@@ -201,11 +202,7 @@ public:
             }
 
             if (item.detailLevel == 0) {
-                ++painterDetailedCount;
-                painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
-                painter.setBrush(item.patternBrush);
-                painter.drawPolygon(item.polygon);
-                continue;
+                ++detailedGpuCount;
             }
 
             QColor fillColor = item.fillColor;
@@ -240,9 +237,33 @@ public:
                 for (int i = 1; i < vertexCount - 1; ++i) {
                     const QPointF p1 = item.polygon[i];
                     const QPointF p2 = item.polygon[i + 1];
-                    appendVertex(triangleVertexData, origin.x(), origin.y(), r, g, b, a);
-                    appendVertex(triangleVertexData, p1.x(), p1.y(), r, g, b, a);
-                    appendVertex(triangleVertexData, p2.x(), p2.y(), r, g, b, a);
+                    appendVertex(triangleVertexData,
+                                 origin.x(),
+                                 origin.y(),
+                                 r,
+                                 g,
+                                 b,
+                                 a,
+                                 item.patternSeed,
+                                 static_cast<float>(item.detailLevel));
+                    appendVertex(triangleVertexData,
+                                 p1.x(),
+                                 p1.y(),
+                                 r,
+                                 g,
+                                 b,
+                                 a,
+                                 item.patternSeed,
+                                 static_cast<float>(item.detailLevel));
+                    appendVertex(triangleVertexData,
+                                 p2.x(),
+                                 p2.y(),
+                                 r,
+                                 g,
+                                 b,
+                                 a,
+                                 item.patternSeed,
+                                 static_cast<float>(item.detailLevel));
                 }
 
                 if (item.selected) {
@@ -262,22 +283,26 @@ public:
         m_vertexBuffer.bind();
         uploadVertexData(triangleVertexData, lineVertexData);
 
-        constexpr int stride = 6 * static_cast<int>(sizeof(float));
+        constexpr int stride = 8 * static_cast<int>(sizeof(float));
         m_program.enableAttributeArray(0);
         m_program.setAttributeBuffer(0, GL_FLOAT, 0, 2, stride);
         m_program.enableAttributeArray(1);
         m_program.setAttributeBuffer(1, GL_FLOAT, 2 * static_cast<int>(sizeof(float)), 4, stride);
+        m_program.enableAttributeArray(2);
+        m_program.setAttributeBuffer(2, GL_FLOAT, 6 * static_cast<int>(sizeof(float)), 1, stride);
+        m_program.enableAttributeArray(3);
+        m_program.setAttributeBuffer(3, GL_FLOAT, 7 * static_cast<int>(sizeof(float)), 1, stride);
 
         QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
         gl->glDisable(GL_DEPTH_TEST);
         gl->glEnable(GL_BLEND);
         gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        const int triangleVertexCount = static_cast<int>(triangleVertexData.size() / 6);
+        const int triangleVertexCount = static_cast<int>(triangleVertexData.size() / 8);
         if (triangleVertexCount > 0) {
             gl->glDrawArrays(GL_TRIANGLES, 0, triangleVertexCount);
         }
 
-        const int lineVertexCount = static_cast<int>(lineVertexData.size() / 6);
+        const int lineVertexCount = static_cast<int>(lineVertexData.size() / 8);
         if (lineVertexCount > 0) {
             gl->glLineWidth(2.0f);
             gl->glDrawArrays(GL_LINES, triangleVertexCount, lineVertexCount);
@@ -285,15 +310,17 @@ public:
 
         m_program.disableAttributeArray(0);
         m_program.disableAttributeArray(1);
+        m_program.disableAttributeArray(2);
+        m_program.disableAttributeArray(3);
         m_vertexBuffer.release();
         m_program.release();
         painter.endNativePainting();
 
         m_frameCounter += 1;
-        m_trianglesSubmitted += (triangleVertexData.size() / 18);
-        m_linesSubmitted += (lineVertexData.size() / 12);
+        m_trianglesSubmitted += (triangleVertexData.size() / 24);
+        m_linesSubmitted += (lineVertexData.size() / 16);
         m_skippedTinyCount += static_cast<quint64>(std::max(0, skippedTinyCount));
-        m_painterDetailedCount += static_cast<quint64>(std::max(0, painterDetailedCount));
+        m_detailedGpuCount += static_cast<quint64>(std::max(0, detailedGpuCount));
         if (!m_statsEnabled) {
             return;
         }
@@ -302,7 +329,7 @@ public:
             m_statsTimer.start();
         } else if (m_frameCounter % 120 == 0) {
             const qint64 elapsedMs = std::max<qint64>(1, m_statsTimer.elapsed());
-            qInfo().noquote() << QString("OpenGL backend stats: frames=%1 triangles=%2 lines=%3 avgTriangles/frame=%4 avgLines/frame=%5 avgMs/frame=%6 tinySkipped=%7 detailedPainter=%8")
+            qInfo().noquote() << QString("OpenGL backend stats: frames=%1 triangles=%2 lines=%3 avgTriangles/frame=%4 avgLines/frame=%5 avgMs/frame=%6 tinySkipped=%7 detailedGpu=%8")
                                      .arg(m_frameCounter)
                                      .arg(m_trianglesSubmitted)
                                      .arg(m_linesSubmitted)
@@ -310,7 +337,7 @@ public:
                                      .arg(m_linesSubmitted / std::max<quint64>(1, m_frameCounter))
                                      .arg(static_cast<double>(elapsedMs) / std::max<quint64>(1, m_frameCounter), 0, 'f', 3)
                                      .arg(m_skippedTinyCount)
-                                     .arg(m_painterDetailedCount);
+                                     .arg(m_detailedGpuCount);
         }
     }
 
@@ -326,13 +353,17 @@ private:
                              const float r,
                              const float g,
                              const float b,
-                             const float a) {
+                             const float a,
+                             const float patternSeed,
+                             const float detailLevel) {
         out.push_back(x);
         out.push_back(y);
         out.push_back(r);
         out.push_back(g);
         out.push_back(b);
         out.push_back(a);
+        out.push_back(patternSeed);
+        out.push_back(detailLevel);
     }
 
     static void appendOutlineSegments(QVector<float>& out,
@@ -350,8 +381,8 @@ private:
         for (int i = 0; i < vertexCount; ++i) {
             const QPointF p1 = polygon[i];
             const QPointF p2 = polygon[(i + 1) % vertexCount];
-            appendVertex(out, p1.x(), p1.y(), r, g, b, a);
-            appendVertex(out, p2.x(), p2.y(), r, g, b, a);
+            appendVertex(out, p1.x(), p1.y(), r, g, b, a, 0.0F, 1.0F);
+            appendVertex(out, p2.x(), p2.y(), r, g, b, a, 0.0F, 1.0F);
         }
     }
 
@@ -381,7 +412,7 @@ private:
         }
     }
 
-    void drawDetailedWithPainter(QPainter& painter, const QVector<RenderItem>& items) {
+    void drawWithPainterFallback(QPainter& painter, const QVector<RenderItem>& items) {
         for (const RenderItem& item : items) {
             painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
             painter.setBrush(item.detailLevel == 0 ? item.patternBrush : QBrush(item.fillColor, Qt::SolidPattern));
@@ -401,20 +432,34 @@ private:
         const char* vertexShader = R"(
             attribute vec2 aPosition;
             attribute vec4 aColor;
+            attribute float aPatternSeed;
+            attribute float aDetailLevel;
             varying vec4 vColor;
+            varying float vPatternSeed;
+            varying float vDetailLevel;
             uniform vec2 uViewport;
             void main() {
                 vec2 ndc = vec2((aPosition.x / uViewport.x) * 2.0 - 1.0,
                                 1.0 - ((aPosition.y / uViewport.y) * 2.0));
                 gl_Position = vec4(ndc, 0.0, 1.0);
                 vColor = aColor;
+                vPatternSeed = aPatternSeed;
+                vDetailLevel = aDetailLevel;
             }
         )";
 
         const char* fragmentShader = R"(
             varying vec4 vColor;
+            varying float vPatternSeed;
+            varying float vDetailLevel;
             void main() {
-                gl_FragColor = vColor;
+                vec4 color = vColor;
+                if (vDetailLevel < 0.5) {
+                    vec2 p = floor(gl_FragCoord.xy / 2.0);
+                    float noise = fract(sin(dot(p + vec2(vPatternSeed * 17.0, vPatternSeed * 31.0), vec2(12.9898, 78.233))) * 43758.5453);
+                    color.a *= noise > 0.5 ? 1.0 : 0.25;
+                }
+                gl_FragColor = color;
             }
         )";
 
@@ -425,6 +470,8 @@ private:
 
         m_program.bindAttributeLocation("aPosition", 0);
         m_program.bindAttributeLocation("aColor", 1);
+        m_program.bindAttributeLocation("aPatternSeed", 2);
+        m_program.bindAttributeLocation("aDetailLevel", 3);
 
         if (!m_program.link()) {
             return false;
@@ -451,7 +498,7 @@ private:
     quint64 m_trianglesSubmitted{0};
     quint64 m_linesSubmitted{0};
     quint64 m_skippedTinyCount{0};
-    quint64 m_painterDetailedCount{0};
+    quint64 m_detailedGpuCount{0};
 };
 } // namespace
 
@@ -744,6 +791,8 @@ private:
                 item.outlineColor.setAlpha(255);
             }
 
+            const uint patternHash = qHash(layer->pattern);
+            item.patternSeed = static_cast<float>(patternHash % 4096U) / 4096.0F;
             item.patternBrush = brushForFillColor(item.fillColor, layer->pattern);
             items.push_back(std::move(item));
         }
