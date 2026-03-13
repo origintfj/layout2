@@ -30,6 +30,14 @@ const DrawnRectangle* RectangleObjectModel::asRectangle() const {
     return &m_rectangle;
 }
 
+bool RectangleObjectModel::tryGetBounds(Bounds& outBounds) const {
+    outBounds.minX = std::min(m_rectangle.x1, m_rectangle.x2);
+    outBounds.maxX = std::max(m_rectangle.x1, m_rectangle.x2);
+    outBounds.minY = std::min(m_rectangle.y1, m_rectangle.y2);
+    outBounds.maxY = std::max(m_rectangle.y1, m_rectangle.y2);
+    return true;
+}
+
 void RectangleObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const {
     const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
     const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
@@ -63,6 +71,13 @@ void RectangleObjectModel::appendRenderPrimitives(QVector<SceneRenderPrimitive>&
 }
 
 void LayoutSceneNode::addObject(std::shared_ptr<LayoutObjectModel> object) {
+    if (!object) {
+        return;
+    }
+
+    m_objectById.insert(object->objectId(), object);
+    indexObject(object);
+    m_objectOrderById.insert(object->objectId(), m_objects.size());
     m_objects.push_back(std::move(object));
 }
 
@@ -82,14 +97,57 @@ void LayoutSceneNode::collectRectangles(QVector<const DrawnRectangle*>& outRecta
 }
 
 void LayoutSceneNode::collectRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const {
-    QVector<const LayoutObjectModel*> objects;
-    collectObjects(objects);
+    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+        if (object) {
+            object->appendRenderPrimitives(outPrimitives);
+        }
+    }
 
-    for (const LayoutObjectModel* object : objects) {
-        if (!object) {
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        child->collectRenderPrimitives(outPrimitives);
+    }
+}
+
+void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
+                                                    const qint64 minY,
+                                                    const qint64 maxX,
+                                                    const qint64 maxY,
+                                                    QVector<SceneRenderPrimitive>& outPrimitives) const {
+    QSet<quint64> candidateObjectIds;
+    collectCandidateObjectIdsInRect(minX, minY, maxX, maxY, candidateObjectIds);
+
+    QVector<QPair<int, quint64>> orderedCandidateIds;
+    orderedCandidateIds.reserve(candidateObjectIds.size());
+    for (quint64 objectId : candidateObjectIds) {
+        const auto orderIt = m_objectOrderById.constFind(objectId);
+        if (orderIt == m_objectOrderById.cend()) {
             continue;
         }
-        object->appendRenderPrimitives(outPrimitives);
+        orderedCandidateIds.push_back(qMakePair(orderIt.value(), objectId));
+    }
+    std::sort(orderedCandidateIds.begin(), orderedCandidateIds.end(),
+              [](const QPair<int, quint64>& lhs, const QPair<int, quint64>& rhs) {
+                  return lhs.first < rhs.first;
+              });
+
+    for (const auto& orderedCandidate : orderedCandidateIds) {
+        const quint64 objectId = orderedCandidate.second;
+        const auto objectIt = m_objectById.constFind(objectId);
+        if (objectIt == m_objectById.cend() || !objectIt.value()) {
+            continue;
+        }
+
+        const auto boundsIt = m_objectBoundsById.constFind(objectId);
+        if (boundsIt != m_objectBoundsById.cend()
+            && !boundsIntersectRect(boundsIt.value(), minX, minY, maxX, maxY)) {
+            continue;
+        }
+
+        objectIt.value()->appendRenderPrimitives(outPrimitives);
+    }
+
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        child->collectRenderPrimitivesInRect(minX, minY, maxX, maxY, outPrimitives);
     }
 }
 
@@ -108,17 +166,49 @@ QVector<quint64> LayoutSceneNode::matchingObjectIdsAt(
     qint64 y,
     const std::function<bool(const LayoutObjectModel&)>& predicate) const {
     QVector<quint64> matches;
-    QVector<const LayoutObjectModel*> objects;
-    collectObjects(objects);
+    QSet<quint64> candidateObjectIds;
+    collectCandidateObjectIdsInRect(x, y, x, y, candidateObjectIds);
 
-    for (int i = objects.size() - 1; i >= 0; --i) {
-        const LayoutObjectModel* object = objects[i];
-        if (!object || !predicate(*object)) {
+    QVector<QPair<int, quint64>> orderedCandidateIds;
+    orderedCandidateIds.reserve(candidateObjectIds.size());
+    for (quint64 objectId : candidateObjectIds) {
+        const auto orderIt = m_objectOrderById.constFind(objectId);
+        if (orderIt == m_objectOrderById.cend()) {
+            continue;
+        }
+        orderedCandidateIds.push_back(qMakePair(orderIt.value(), objectId));
+    }
+    std::sort(orderedCandidateIds.begin(), orderedCandidateIds.end(),
+              [](const QPair<int, quint64>& lhs, const QPair<int, quint64>& rhs) {
+                  return lhs.first > rhs.first;
+              });
+
+    for (const auto& orderedCandidate : orderedCandidateIds) {
+        const quint64 objectId = orderedCandidate.second;
+        const auto objectIt = m_objectById.constFind(objectId);
+        if (objectIt == m_objectById.cend() || !objectIt.value()) {
+            continue;
+        }
+        const std::shared_ptr<LayoutObjectModel>& object = objectIt.value();
+
+        const auto boundsIt = m_objectBoundsById.constFind(objectId);
+        if (boundsIt != m_objectBoundsById.cend() && !boundsContainPoint(boundsIt.value(), x, y)) {
+            continue;
+        }
+
+        if (!predicate(*object)) {
             continue;
         }
 
         if (object->containsPoint(x, y)) {
             matches.push_back(object->objectId());
+        }
+    }
+
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        const QVector<quint64> childMatches = child->matchingObjectIdsAt(x, y, predicate);
+        for (quint64 objectId : childMatches) {
+            matches.push_back(objectId);
         }
     }
 
@@ -153,18 +243,13 @@ bool LayoutSceneNode::collectOutlineSegmentsByObjectIdRecursive(
 }
 
 const LayoutObjectModel* LayoutSceneNode::findObjectById(quint64 objectId) const {
-    return findObjectByIdRecursive(objectId);
-}
-
-const LayoutObjectModel* LayoutSceneNode::findObjectByIdRecursive(quint64 objectId) const {
-    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
-        if (object && object->objectId() == objectId) {
-            return object.get();
-        }
+    const auto it = m_objectById.constFind(objectId);
+    if (it != m_objectById.cend() && it.value()) {
+        return it.value().get();
     }
 
     for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-        if (const LayoutObjectModel* found = child->findObjectByIdRecursive(objectId)) {
+        if (const LayoutObjectModel* found = child->findObjectById(objectId)) {
             return found;
         }
     }
@@ -179,7 +264,15 @@ bool LayoutSceneNode::removeObjectById(quint64 objectId) {
 bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
     for (int i = 0; i < m_objects.size(); ++i) {
         if (m_objects[i] && m_objects[i]->objectId() == objectId) {
+            deindexObject(objectId);
+            m_objectById.remove(objectId);
+            m_objectOrderById.remove(objectId);
             m_objects.removeAt(i);
+            for (int j = i; j < m_objects.size(); ++j) {
+                if (m_objects[j]) {
+                    m_objectOrderById[m_objects[j]->objectId()] = j;
+                }
+            }
             return true;
         }
     }
@@ -191,6 +284,107 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
     }
 
     return false;
+}
+
+bool LayoutSceneNode::boundsContainPoint(const LayoutObjectModel::Bounds& bounds, const qint64 x, const qint64 y) {
+    return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
+}
+
+bool LayoutSceneNode::boundsIntersectRect(const LayoutObjectModel::Bounds& bounds,
+                                          const qint64 minX,
+                                          const qint64 minY,
+                                          const qint64 maxX,
+                                          const qint64 maxY) {
+    return !(bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY);
+}
+
+qint64 LayoutSceneNode::tileCoordFor(const qint64 coordinate) {
+    if (coordinate >= 0) {
+        return coordinate / kSpatialTileSize;
+    }
+    return -(((-coordinate) + kSpatialTileSize - 1) / kSpatialTileSize);
+}
+
+quint64 LayoutSceneNode::tileKey(const qint64 tileX, const qint64 tileY) {
+    return (static_cast<quint64>(static_cast<quint32>(tileX)) << 32)
+           | static_cast<quint64>(static_cast<quint32>(tileY));
+}
+
+void LayoutSceneNode::indexObject(const std::shared_ptr<LayoutObjectModel>& object) {
+    if (!object) {
+        return;
+    }
+
+    LayoutObjectModel::Bounds bounds;
+    if (!object->tryGetBounds(bounds)) {
+        return;
+    }
+
+    const quint64 objectId = object->objectId();
+    m_objectBoundsById.insert(objectId, bounds);
+
+    const qint64 minTileX = tileCoordFor(bounds.minX);
+    const qint64 maxTileX = tileCoordFor(bounds.maxX);
+    const qint64 minTileY = tileCoordFor(bounds.minY);
+    const qint64 maxTileY = tileCoordFor(bounds.maxY);
+
+    QVector<quint64> tileKeys;
+    tileKeys.reserve(static_cast<int>((maxTileX - minTileX + 1) * (maxTileY - minTileY + 1)));
+    for (qint64 tileX = minTileX; tileX <= maxTileX; ++tileX) {
+        for (qint64 tileY = minTileY; tileY <= maxTileY; ++tileY) {
+            const quint64 key = tileKey(tileX, tileY);
+            m_tileObjectIds[key].push_back(objectId);
+            tileKeys.push_back(key);
+        }
+    }
+
+    m_objectTileKeys.insert(objectId, std::move(tileKeys));
+}
+
+void LayoutSceneNode::deindexObject(const quint64 objectId) {
+    const auto tileKeysIt = m_objectTileKeys.constFind(objectId);
+    if (tileKeysIt != m_objectTileKeys.cend()) {
+        for (quint64 key : tileKeysIt.value()) {
+            auto idsIt = m_tileObjectIds.find(key);
+            if (idsIt == m_tileObjectIds.end()) {
+                continue;
+            }
+
+            QVector<quint64>& ids = idsIt.value();
+            ids.removeAll(objectId);
+            if (ids.isEmpty()) {
+                m_tileObjectIds.erase(idsIt);
+            }
+        }
+
+        m_objectTileKeys.erase(tileKeysIt);
+    }
+
+    m_objectBoundsById.remove(objectId);
+}
+
+void LayoutSceneNode::collectCandidateObjectIdsInRect(const qint64 minX,
+                                                      const qint64 minY,
+                                                      const qint64 maxX,
+                                                      const qint64 maxY,
+                                                      QSet<quint64>& outCandidateIds) const {
+    const qint64 minTileX = tileCoordFor(minX);
+    const qint64 maxTileX = tileCoordFor(maxX);
+    const qint64 minTileY = tileCoordFor(minY);
+    const qint64 maxTileY = tileCoordFor(maxY);
+
+    for (qint64 tileX = minTileX; tileX <= maxTileX; ++tileX) {
+        for (qint64 tileY = minTileY; tileY <= maxTileY; ++tileY) {
+            const auto idsIt = m_tileObjectIds.constFind(tileKey(tileX, tileY));
+            if (idsIt == m_tileObjectIds.cend()) {
+                continue;
+            }
+
+            for (quint64 objectId : idsIt.value()) {
+                outCandidateIds.insert(objectId);
+            }
+        }
+    }
 }
 
 bool LayoutEditPreviewModel::tryBuildPreviewPrimitive(const QString& activeTool,
