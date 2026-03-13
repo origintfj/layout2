@@ -24,6 +24,7 @@
 #include <QWidget>
 #include <QtGlobal>
 #include <cmath>
+#include <cstdlib>
 #include <memory>
 
 namespace {
@@ -74,6 +75,107 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
 quint64 layerCodeKey(quint32 nameId, quint32 typeId) {
     return (static_cast<quint64>(nameId) << 32) | static_cast<quint64>(typeId);
 }
+
+enum class CanvasRenderBackendType {
+    Raster,
+    OpenGL
+};
+
+CanvasRenderBackendType backendTypeFromEnv() {
+    const QByteArray backendName = qgetenv("LAYOUT2_RENDER_BACKEND").trimmed().toLower();
+    return backendName == "opengl" ? CanvasRenderBackendType::OpenGL : CanvasRenderBackendType::Raster;
+}
+
+class PrimitiveRenderBackend {
+public:
+    virtual ~PrimitiveRenderBackend() = default;
+
+    virtual void drawPrimitive(QPainter& painter,
+                               const QPolygonF& polygon,
+                               const LayerDefinition& layer,
+                               bool preview,
+                               bool selected,
+                               const QString& pattern,
+                               const QBrush& cachedPatternBrush,
+                               int detailLevel) = 0;
+};
+
+class RasterPrimitiveRenderBackend final : public PrimitiveRenderBackend {
+public:
+    void drawPrimitive(QPainter& painter,
+                       const QPolygonF& polygon,
+                       const LayerDefinition& layer,
+                       const bool preview,
+                       const bool selected,
+                       const QString& pattern,
+                       const QBrush& cachedPatternBrush,
+                       const int detailLevel) override {
+        Q_UNUSED(pattern);
+
+        QColor fillColor = layer.color;
+        if (selected) {
+            fillColor = fillColor.lighter(130);
+        }
+        fillColor.setAlpha(preview ? 90 : 140);
+
+        QColor outlineColor = layer.color;
+        outlineColor.setAlpha(preview ? 180 : 220);
+        if (selected) {
+            outlineColor = QColor("#ffffff");
+            outlineColor.setAlpha(255);
+        }
+
+        if (detailLevel == 0) {
+            painter.setPen(QPen(outlineColor, 1, preview ? Qt::DashLine : Qt::SolidLine));
+            painter.setBrush(cachedPatternBrush);
+        } else if (detailLevel == 1) {
+            painter.setPen(selected
+                               ? QPen(outlineColor, 1, Qt::SolidLine)
+                               : QPen(outlineColor, 0, Qt::NoPen));
+            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
+        } else {
+            painter.setPen(selected
+                               ? QPen(outlineColor, 1, Qt::SolidLine)
+                               : QPen(outlineColor, 0, Qt::NoPen));
+            QColor coarseFill = fillColor;
+            coarseFill.setAlpha(std::min(255, fillColor.alpha() + 50));
+            painter.setBrush(QBrush(coarseFill, Qt::SolidPattern));
+        }
+
+        painter.drawPolygon(polygon);
+    }
+};
+
+// This backend acts as the integration seam for a true QOpenGLWidget/VBO path.
+// In this step it uses a simplified painter-based style to keep behavior stable
+// while enabling runtime backend selection and future GPU implementation.
+class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
+public:
+    void drawPrimitive(QPainter& painter,
+                       const QPolygonF& polygon,
+                       const LayerDefinition& layer,
+                       const bool preview,
+                       const bool selected,
+                       const QString& pattern,
+                       const QBrush& cachedPatternBrush,
+                       const int detailLevel) override {
+        Q_UNUSED(pattern);
+        Q_UNUSED(cachedPatternBrush);
+        Q_UNUSED(detailLevel);
+
+        QColor fillColor = layer.color;
+        fillColor.setAlpha(preview ? 96 : 156);
+        if (selected) {
+            fillColor = fillColor.lighter(120);
+        }
+
+        QColor outlineColor = selected ? QColor("#ffffff") : layer.color;
+        outlineColor.setAlpha(selected ? 255 : 190);
+        painter.setPen(QPen(outlineColor, selected ? 2 : 0, selected ? Qt::SolidLine : Qt::NoPen));
+        painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
+        painter.drawPolygon(polygon);
+    }
+};
 } // namespace
 
 bool isModifierOnlyKey(int key) {
@@ -104,9 +206,16 @@ class LayoutCanvas : public QWidget {
     Q_OBJECT
 public:
     explicit LayoutCanvas(QWidget* parent = nullptr)
-        : QWidget(parent) {
+        : QWidget(parent),
+          m_backendType(backendTypeFromEnv()) {
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
+
+        if (m_backendType == CanvasRenderBackendType::OpenGL) {
+            m_renderBackend = std::make_unique<OpenGLPrimitiveRenderBackend>();
+        } else {
+            m_renderBackend = std::make_unique<RasterPrimitiveRenderBackend>();
+        }
     }
 
     void setRootCell(const LayoutSceneNode* rootCell) {
@@ -331,37 +440,27 @@ private:
             return;
         }
 
-        QColor fillColor = layer->color;
-        if (selected) {
-            fillColor = fillColor.lighter(130);
-        }
-        fillColor.setAlpha(primitive.preview ? 90 : 140);
+        const int detailCode = detailLevel == RenderDetailLevel::Detailed
+                                   ? 0
+                                   : detailLevel == RenderDetailLevel::Simplified ? 1 : 2;
+        const QColor fillColor = [layer, primitive, selected]() {
+            QColor color = layer->color;
+            if (selected) {
+                color = color.lighter(130);
+            }
+            color.setAlpha(primitive.preview ? 90 : 140);
+            return color;
+        }();
+        const QBrush cachedBrush = brushForFillColor(fillColor, layer->pattern);
 
-        QColor outlineColor = layer->color;
-        outlineColor.setAlpha(primitive.preview ? 180 : 220);
-        if (selected) {
-            outlineColor = QColor("#ffffff");
-            outlineColor.setAlpha(255);
-        }
-
-        if (detailLevel == RenderDetailLevel::Detailed) {
-            painter.setPen(QPen(outlineColor, 1, primitive.preview ? Qt::DashLine : Qt::SolidLine));
-            painter.setBrush(brushForFillColor(fillColor, layer->pattern));
-        } else if (detailLevel == RenderDetailLevel::Simplified) {
-            painter.setPen(selected
-                               ? QPen(outlineColor, 1, Qt::SolidLine)
-                               : QPen(outlineColor, 0, Qt::NoPen));
-            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
-        } else {
-            painter.setPen(selected
-                               ? QPen(outlineColor, 1, Qt::SolidLine)
-                               : QPen(outlineColor, 0, Qt::NoPen));
-            QColor coarseFill = fillColor;
-            coarseFill.setAlpha(std::min(255, fillColor.alpha() + 50));
-            painter.setBrush(QBrush(coarseFill, Qt::SolidPattern));
-        }
-
-        painter.drawPolygon(polygon);
+        m_renderBackend->drawPrimitive(painter,
+                                       polygon,
+                                       *layer,
+                                       primitive.preview,
+                                       selected,
+                                       layer->pattern,
+                                       cachedBrush,
+                                       detailCode);
     }
 
     RenderDetailLevel currentDetailLevel() const {
@@ -607,6 +706,8 @@ private:
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
     QHash<QString, QBrush> m_fillBrushCache;
+    CanvasRenderBackendType m_backendType{CanvasRenderBackendType::Raster};
+    std::unique_ptr<PrimitiveRenderBackend> m_renderBackend;
     SceneRenderPrimitive m_editPreview;
     QString m_activeTool{"none"};
 

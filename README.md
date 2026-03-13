@@ -219,6 +219,20 @@ sudo apt install -y build-essential cmake tcl-dev qtbase5-dev
 
 ## Build
 
+## Rendering backend selection (experimental)
+
+By default, the layout canvas uses the raster backend.
+
+You can enable the experimental OpenGL-oriented backend seam with:
+
+```bash
+export LAYOUT2_RENDER_BACKEND=opengl
+```
+
+Current status:
+- `raster`: full current rendering path.
+- `opengl`: backend abstraction path with simplified styling; this is the integration seam for a full GPU renderer.
+
 ```bash
 cmake -S . -B build
 cmake --build build
