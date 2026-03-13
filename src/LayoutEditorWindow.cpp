@@ -108,7 +108,12 @@ enum class CanvasRenderBackendType {
 
 CanvasRenderBackendType backendTypeFromEnv() {
     const QByteArray backendName = qgetenv("LAYOUT2_RENDER_BACKEND").trimmed().toLower();
-    return backendName == "opengl" ? CanvasRenderBackendType::OpenGL : CanvasRenderBackendType::Raster;
+    if (backendName == "raster") {
+        return CanvasRenderBackendType::Raster;
+    }
+
+    // Default to OpenGL unless explicitly overridden.
+    return CanvasRenderBackendType::OpenGL;
 }
 
 class PrimitiveRenderBackend {
