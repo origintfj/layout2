@@ -30,6 +30,14 @@ const DrawnRectangle* RectangleObjectModel::asRectangle() const {
     return &m_rectangle;
 }
 
+bool RectangleObjectModel::tryGetBounds(Bounds& outBounds) const {
+    outBounds.minX = std::min(m_rectangle.x1, m_rectangle.x2);
+    outBounds.maxX = std::max(m_rectangle.x1, m_rectangle.x2);
+    outBounds.minY = std::min(m_rectangle.y1, m_rectangle.y2);
+    outBounds.maxY = std::max(m_rectangle.y1, m_rectangle.y2);
+    return true;
+}
+
 void RectangleObjectModel::appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const {
     const qint64 minX = std::min(m_rectangle.x1, m_rectangle.x2);
     const qint64 maxX = std::max(m_rectangle.x1, m_rectangle.x2);
@@ -239,24 +247,11 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
     return false;
 }
 
-bool LayoutSceneNode::tryRectangleBounds(const LayoutObjectModel& object, ObjectBounds& outBounds) {
-    const DrawnRectangle* rectangle = object.asRectangle();
-    if (!rectangle) {
-        return false;
-    }
-
-    outBounds.minX = std::min(rectangle->x1, rectangle->x2);
-    outBounds.minY = std::min(rectangle->y1, rectangle->y2);
-    outBounds.maxX = std::max(rectangle->x1, rectangle->x2);
-    outBounds.maxY = std::max(rectangle->y1, rectangle->y2);
-    return true;
-}
-
-bool LayoutSceneNode::boundsContainPoint(const ObjectBounds& bounds, const qint64 x, const qint64 y) {
+bool LayoutSceneNode::boundsContainPoint(const LayoutObjectModel::Bounds& bounds, const qint64 x, const qint64 y) {
     return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 }
 
-bool LayoutSceneNode::boundsIntersectRect(const ObjectBounds& bounds,
+bool LayoutSceneNode::boundsIntersectRect(const LayoutObjectModel::Bounds& bounds,
                                           const qint64 minX,
                                           const qint64 minY,
                                           const qint64 maxX,
@@ -281,8 +276,8 @@ void LayoutSceneNode::indexObject(const std::shared_ptr<LayoutObjectModel>& obje
         return;
     }
 
-    ObjectBounds bounds;
-    if (!tryRectangleBounds(*object, bounds)) {
+    LayoutObjectModel::Bounds bounds;
+    if (!object->tryGetBounds(bounds)) {
         return;
     }
 

@@ -13,6 +13,13 @@
 // implement this interface and be inserted into a scene node.
 class LayoutObjectModel {
 public:
+    struct Bounds {
+        qint64 minX{0};
+        qint64 minY{0};
+        qint64 maxX{0};
+        qint64 maxY{0};
+    };
+
     LayoutObjectModel();
     virtual ~LayoutObjectModel() = default;
 
@@ -20,6 +27,7 @@ public:
 
     virtual bool containsPoint(qint64 x, qint64 y) const = 0;
     virtual const DrawnRectangle* asRectangle() const { return nullptr; }
+    virtual bool tryGetBounds(Bounds& outBounds) const = 0;
     virtual void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const = 0;
     virtual void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const = 0;
 
@@ -33,6 +41,7 @@ public:
 
     bool containsPoint(qint64 x, qint64 y) const override;
     const DrawnRectangle* asRectangle() const override;
+    bool tryGetBounds(Bounds& outBounds) const override;
     void appendOutlineSegments(QVector<WorldLineSegment>& outSegments) const override;
     void appendRenderPrimitives(QVector<SceneRenderPrimitive>& outPrimitives) const override;
 
@@ -84,18 +93,10 @@ public:
     const LayoutObjectModel* findObjectById(quint64 objectId) const;
     bool removeObjectById(quint64 objectId);
 private:
-    struct ObjectBounds {
-        qint64 minX{0};
-        qint64 minY{0};
-        qint64 maxX{0};
-        qint64 maxY{0};
-    };
-
     static constexpr qint64 kSpatialTileSize = 2048;
 
-    static bool tryRectangleBounds(const LayoutObjectModel& object, ObjectBounds& outBounds);
-    static bool boundsContainPoint(const ObjectBounds& bounds, qint64 x, qint64 y);
-    static bool boundsIntersectRect(const ObjectBounds& bounds,
+    static bool boundsContainPoint(const LayoutObjectModel::Bounds& bounds, qint64 x, qint64 y);
+    static bool boundsIntersectRect(const LayoutObjectModel::Bounds& bounds,
                                     qint64 minX,
                                     qint64 minY,
                                     qint64 maxX,
@@ -118,7 +119,7 @@ private:
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
     QVector<std::shared_ptr<LayoutSceneNode>> m_children;
     QHash<quint64, std::shared_ptr<LayoutObjectModel>> m_objectById;
-    QHash<quint64, ObjectBounds> m_objectBoundsById;
+    QHash<quint64, LayoutObjectModel::Bounds> m_objectBoundsById;
     QHash<quint64, QVector<quint64>> m_tileObjectIds;
     QHash<quint64, QVector<quint64>> m_objectTileKeys;
 };
