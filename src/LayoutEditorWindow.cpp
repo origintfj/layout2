@@ -225,12 +225,12 @@ public:
         gl->glDisable(GL_DEPTH_TEST);
         gl->glEnable(GL_BLEND);
         gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        const int triangleVertexCount = static_cast<int>(m_cachedTriangleVertexData.size() / 8);
+        const int triangleVertexCount = static_cast<int>(m_cachedTriangleVertexData.size() / 6);
         if (triangleVertexCount > 0) {
             gl->glDrawArrays(GL_TRIANGLES, 0, triangleVertexCount);
         }
 
-        const int lineVertexCount = static_cast<int>(m_cachedLineVertexData.size() / 8);
+        const int lineVertexCount = static_cast<int>(m_cachedLineVertexData.size() / 6);
         if (lineVertexCount > 0) {
             gl->glLineWidth(2.0f);
             gl->glDrawArrays(GL_LINES, triangleVertexCount, lineVertexCount);
