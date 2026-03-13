@@ -231,7 +231,7 @@ export LAYOUT2_RENDER_BACKEND=opengl
 
 Current status:
 - `raster`: full current rendering path.
-- `opengl`: uses a `QOpenGLWidget` canvas path with OpenGL framebuffer clears and the experimental backend styling path.
+- `opengl`: uses a `QOpenGLWidget` canvas path, OpenGL framebuffer clears, and GPU triangle submission for simplified/coarse primitives (detailed patterned mode still uses painter path).
 
 ```bash
 cmake -S . -B build

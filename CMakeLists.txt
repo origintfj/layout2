@@ -14,11 +14,11 @@ set(CMAKE_AUTORCC ON)
 find_package(TCL REQUIRED)
 
 # Ubuntu commonly ships Qt5 by default; prefer Qt6 if present.
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
 if (Qt6_FOUND)
     set(QT_PACKAGE Qt6)
 else()
-    find_package(Qt5 REQUIRED COMPONENTS Widgets)
+    find_package(Qt5 REQUIRED COMPONENTS Widgets OpenGL)
     set(QT_PACKAGE Qt5)
 endif()
 
@@ -42,7 +42,11 @@ add_executable(layout2 ${LAYOUT2_SOURCES})
 
 # Include Tcl headers and link both Qt widgets and Tcl library.
 target_include_directories(layout2 PRIVATE ${TCL_INCLUDE_PATH})
-target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${TCL_LIBRARY})
+if (QT_PACKAGE STREQUAL "Qt6")
+    target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${QT_PACKAGE}::OpenGLWidgets ${TCL_LIBRARY})
+else()
+    target_link_libraries(layout2 PRIVATE ${QT_PACKAGE}::Widgets ${QT_PACKAGE}::OpenGL ${TCL_LIBRARY})
+endif()
 
 # Copy runtime data/scripts into build directory for startup loading.
 configure_file(data/example_layers.txt ${CMAKE_CURRENT_BINARY_DIR}/example_layers.txt COPYONLY)

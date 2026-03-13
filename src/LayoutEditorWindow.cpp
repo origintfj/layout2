@@ -13,7 +13,9 @@
 #include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
+#include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
@@ -22,6 +24,7 @@
 #include <QSizePolicy>
 #include <QSplitter>
 #include <QVBoxLayout>
+#include <QVector2D>
 #include <QWheelEvent>
 #include <QWidget>
 #include <QtGlobal>
@@ -103,21 +106,26 @@ public:
         int detailLevel{0};
     };
 
-    virtual void beginFrame(QPainter& painter, const QColor& clearColor) = 0;
+    virtual void beginFrame(QPainter& painter, const QColor& clearColor, const QSize& viewportSize) = 0;
 
     virtual void drawPrimitives(QPainter& painter,
-                                const QVector<RenderItem>& items) = 0;
+                                const QVector<RenderItem>& items,
+                                const QSize& viewportSize) = 0;
 
-    virtual void endFrame(QPainter& painter) = 0;
+    virtual void endFrame(QPainter& painter, const QSize& viewportSize) = 0;
 };
 
 class RasterPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
-    void beginFrame(QPainter& painter, const QColor& clearColor) override {
+    void beginFrame(QPainter& painter, const QColor& clearColor, const QSize& viewportSize) override {
+        Q_UNUSED(viewportSize);
         painter.fillRect(painter.viewport(), clearColor);
     }
 
-    void drawPrimitives(QPainter& painter, const QVector<RenderItem>& items) override {
+    void drawPrimitives(QPainter& painter,
+                        const QVector<RenderItem>& items,
+                        const QSize& viewportSize) override {
+        Q_UNUSED(viewportSize);
         for (const RenderItem& item : items) {
             if (item.detailLevel == 2 && item.tinyOnScreen && !item.selected) {
                 continue;
@@ -144,8 +152,9 @@ public:
         }
     }
 
-    void endFrame(QPainter& painter) override {
+    void endFrame(QPainter& painter, const QSize& viewportSize) override {
         Q_UNUSED(painter);
+        Q_UNUSED(viewportSize);
     }
 };
 
@@ -154,14 +163,35 @@ public:
 // while enabling runtime backend selection and future GPU implementation.
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
-    void beginFrame(QPainter& painter, const QColor& clearColor) override {
+    OpenGLPrimitiveRenderBackend() = default;
+
+    void beginFrame(QPainter& painter, const QColor& clearColor, const QSize& viewportSize) override {
         Q_UNUSED(painter);
         Q_UNUSED(clearColor);
+        Q_UNUSED(viewportSize);
     }
 
-    void drawPrimitives(QPainter& painter, const QVector<RenderItem>& items) override {
+    void drawPrimitives(QPainter& painter,
+                        const QVector<RenderItem>& items,
+                        const QSize& viewportSize) override {
+        if (!initializeGlResources()) {
+            // Fallback to painter-only rendering if GL setup fails.
+            drawDetailedWithPainter(painter, items);
+            return;
+        }
+
+        QVector<float> triangleVertexData;
+        triangleVertexData.reserve(items.size() * 36);
+
         for (const RenderItem& item : items) {
             if (item.tinyOnScreen && !item.selected) {
+                continue;
+            }
+
+            if (item.detailLevel == 0) {
+                painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
+                painter.setBrush(item.patternBrush);
+                painter.drawPolygon(item.polygon);
                 continue;
             }
 
@@ -171,17 +201,149 @@ public:
                 fillColor = fillColor.lighter(120);
             }
 
-            QColor outlineColor = item.selected ? QColor("#ffffff") : item.outlineColor;
-            outlineColor.setAlpha(item.selected ? 255 : 190);
-            painter.setPen(QPen(outlineColor, item.selected ? 2 : 0, item.selected ? Qt::SolidLine : Qt::NoPen));
-            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
+            const float r = fillColor.redF();
+            const float g = fillColor.greenF();
+            const float b = fillColor.blueF();
+            const float a = fillColor.alphaF();
+
+            const int vertexCount = item.polygon.size();
+            if (vertexCount < 3) {
+                continue;
+            }
+
+            const QPointF origin = item.polygon[0];
+            for (int i = 1; i < vertexCount - 1; ++i) {
+                const QPointF p1 = item.polygon[i];
+                const QPointF p2 = item.polygon[i + 1];
+                appendVertex(triangleVertexData, origin.x(), origin.y(), r, g, b, a);
+                appendVertex(triangleVertexData, p1.x(), p1.y(), r, g, b, a);
+                appendVertex(triangleVertexData, p2.x(), p2.y(), r, g, b, a);
+            }
+
+            if (item.selected) {
+                QColor outlineColor = QColor("#ffffff");
+                outlineColor.setAlpha(255);
+                painter.setPen(QPen(outlineColor, 2, Qt::SolidLine));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawPolygon(item.polygon);
+            }
+        }
+
+        if (triangleVertexData.isEmpty()) {
+            return;
+        }
+
+        painter.beginNativePainting();
+        m_program.bind();
+        m_program.setUniformValue("uViewport", QVector2D(viewportSize.width(), viewportSize.height()));
+
+        m_vertexBuffer.bind();
+        m_vertexBuffer.allocate(triangleVertexData.constData(),
+                               static_cast<int>(triangleVertexData.size() * sizeof(float)));
+
+        constexpr int stride = 6 * static_cast<int>(sizeof(float));
+        m_program.enableAttributeArray(0);
+        m_program.setAttributeBuffer(0, GL_FLOAT, 0, 2, stride);
+        m_program.enableAttributeArray(1);
+        m_program.setAttributeBuffer(1, GL_FLOAT, 2 * static_cast<int>(sizeof(float)), 4, stride);
+
+        QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
+        gl->glDisable(GL_DEPTH_TEST);
+        gl->glEnable(GL_BLEND);
+        gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        gl->glDrawArrays(GL_TRIANGLES, 0, static_cast<int>(triangleVertexData.size() / 6));
+
+        m_program.disableAttributeArray(0);
+        m_program.disableAttributeArray(1);
+        m_vertexBuffer.release();
+        m_program.release();
+        painter.endNativePainting();
+    }
+
+    void endFrame(QPainter& painter, const QSize& viewportSize) override {
+        Q_UNUSED(painter);
+        Q_UNUSED(viewportSize);
+    }
+
+private:
+    static void appendVertex(QVector<float>& out,
+                             const float x,
+                             const float y,
+                             const float r,
+                             const float g,
+                             const float b,
+                             const float a) {
+        out.push_back(x);
+        out.push_back(y);
+        out.push_back(r);
+        out.push_back(g);
+        out.push_back(b);
+        out.push_back(a);
+    }
+
+    void drawDetailedWithPainter(QPainter& painter, const QVector<RenderItem>& items) {
+        for (const RenderItem& item : items) {
+            painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
+            painter.setBrush(item.detailLevel == 0 ? item.patternBrush : QBrush(item.fillColor, Qt::SolidPattern));
             painter.drawPolygon(item.polygon);
         }
     }
 
-    void endFrame(QPainter& painter) override {
-        Q_UNUSED(painter);
+    bool initializeGlResources() {
+        if (m_initialized) {
+            return true;
+        }
+
+        if (!QOpenGLContext::currentContext()) {
+            return false;
+        }
+
+        const char* vertexShader = R"(
+            attribute vec2 aPosition;
+            attribute vec4 aColor;
+            varying vec4 vColor;
+            uniform vec2 uViewport;
+            void main() {
+                vec2 ndc = vec2((aPosition.x / uViewport.x) * 2.0 - 1.0,
+                                1.0 - ((aPosition.y / uViewport.y) * 2.0));
+                gl_Position = vec4(ndc, 0.0, 1.0);
+                vColor = aColor;
+            }
+        )";
+
+        const char* fragmentShader = R"(
+            varying vec4 vColor;
+            void main() {
+                gl_FragColor = vColor;
+            }
+        )";
+
+        if (!m_program.addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShader)
+            || !m_program.addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShader)) {
+            return false;
+        }
+
+        m_program.bindAttributeLocation("aPosition", 0);
+        m_program.bindAttributeLocation("aColor", 1);
+
+        if (!m_program.link()) {
+            return false;
+        }
+
+        if (m_vertexBuffer.isCreated()) {
+            m_vertexBuffer.destroy();
+        }
+        if (!m_vertexBuffer.create()) {
+            return false;
+        }
+
+        m_initialized = true;
+        return true;
     }
+
+    bool m_initialized{false};
+    QOpenGLShaderProgram m_program;
+    QOpenGLBuffer m_vertexBuffer;
 };
 } // namespace
 
@@ -288,7 +450,7 @@ protected:
         QPainter painter(this);
 
         // Background and world-anchored grid for orientation.
-        m_renderBackend->beginFrame(painter, QColor("#000000"));
+        m_renderBackend->beginFrame(painter, QColor("#000000"), size());
         drawGrid(painter);
 
         // Draw committed geometry first from model-provided primitives.
@@ -296,7 +458,7 @@ protected:
         const QVector<SceneRenderPrimitive> primitives = flattenedRenderPrimitives();
         const QVector<PrimitiveRenderBackend::RenderItem> renderItems =
             buildRenderItems(primitives, detailLevel);
-        m_renderBackend->drawPrimitives(painter, renderItems);
+        m_renderBackend->drawPrimitives(painter, renderItems, size());
 
         if (m_activeTool == "select" && m_hoveredObjectId != 0 && m_rootCell) {
             QVector<WorldLineSegment> previewSegments;
@@ -305,7 +467,7 @@ protected:
             }
         }
 
-        m_renderBackend->endFrame(painter);
+        m_renderBackend->endFrame(painter, size());
 
     }
 
