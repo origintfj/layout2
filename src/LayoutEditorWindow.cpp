@@ -152,6 +152,12 @@ signals:
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
 
 protected:
+    enum class RenderDetailLevel {
+        Detailed,
+        Simplified,
+        Coarse
+    };
+
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
 
@@ -160,9 +166,13 @@ protected:
         drawGrid(painter);
 
         // Draw committed geometry first from model-provided primitives.
+        const RenderDetailLevel detailLevel = currentDetailLevel();
         const QVector<SceneRenderPrimitive> primitives = flattenedRenderPrimitives();
         for (int i = 0; i < primitives.size(); ++i) {
-            drawPrimitive(painter, primitives[i], primitives[i].objectId == m_selectedObjectId);
+            drawPrimitive(painter,
+                          primitives[i],
+                          primitives[i].objectId == m_selectedObjectId,
+                          detailLevel);
         }
 
         if (m_activeTool == "select" && m_hoveredObjectId != 0 && m_rootCell) {
@@ -300,7 +310,10 @@ private:
                        (m_panY - p.y()) / m_zoom);
     }
 
-    void drawPrimitive(QPainter& painter, const SceneRenderPrimitive& primitive, bool selected) {
+    void drawPrimitive(QPainter& painter,
+                       const SceneRenderPrimitive& primitive,
+                       const bool selected,
+                       const RenderDetailLevel detailLevel) {
         const LayerDefinition* layer = layerForPrimitive(primitive);
         if (!layer || !layer->visible || primitive.polygonVertices.isEmpty()) {
             return;
@@ -310,6 +323,12 @@ private:
         polygon.reserve(primitive.polygonVertices.size());
         for (const WorldPoint& vertex : primitive.polygonVertices) {
             polygon.push_back(worldToScreen(vertex.x, vertex.y));
+        }
+
+        const QRectF polygonBounds = polygon.boundingRect();
+        const bool tinyOnScreen = polygonBounds.width() < 1.0 && polygonBounds.height() < 1.0;
+        if (detailLevel == RenderDetailLevel::Coarse && tinyOnScreen && !selected) {
+            return;
         }
 
         QColor fillColor = layer->color;
@@ -325,9 +344,34 @@ private:
             outlineColor.setAlpha(255);
         }
 
-        painter.setPen(QPen(outlineColor, 1, primitive.preview ? Qt::DashLine : Qt::SolidLine));
-        painter.setBrush(brushForFillColor(fillColor, layer->pattern));
+        if (detailLevel == RenderDetailLevel::Detailed) {
+            painter.setPen(QPen(outlineColor, 1, primitive.preview ? Qt::DashLine : Qt::SolidLine));
+            painter.setBrush(brushForFillColor(fillColor, layer->pattern));
+        } else if (detailLevel == RenderDetailLevel::Simplified) {
+            painter.setPen(selected
+                               ? QPen(outlineColor, 1, Qt::SolidLine)
+                               : QPen(outlineColor, 0, Qt::NoPen));
+            painter.setBrush(QBrush(fillColor, Qt::SolidPattern));
+        } else {
+            painter.setPen(selected
+                               ? QPen(outlineColor, 1, Qt::SolidLine)
+                               : QPen(outlineColor, 0, Qt::NoPen));
+            QColor coarseFill = fillColor;
+            coarseFill.setAlpha(std::min(255, fillColor.alpha() + 50));
+            painter.setBrush(QBrush(coarseFill, Qt::SolidPattern));
+        }
+
         painter.drawPolygon(polygon);
+    }
+
+    RenderDetailLevel currentDetailLevel() const {
+        if (m_zoom < 0.30) {
+            return RenderDetailLevel::Coarse;
+        }
+        if (m_zoom < 1.0) {
+            return RenderDetailLevel::Simplified;
+        }
+        return RenderDetailLevel::Detailed;
     }
 
     QBrush brushForFillColor(const QColor& fillColor, const QString& pattern) {
