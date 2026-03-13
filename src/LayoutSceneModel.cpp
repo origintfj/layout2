@@ -77,6 +77,7 @@ void LayoutSceneNode::addObject(std::shared_ptr<LayoutObjectModel> object) {
 
     m_objectById.insert(object->objectId(), object);
     indexObject(object);
+    m_objectOrderById.insert(object->objectId(), m_objects.size());
     m_objects.push_back(std::move(object));
 }
 
@@ -115,18 +116,34 @@ void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
     QSet<quint64> candidateObjectIds;
     collectCandidateObjectIdsInRect(minX, minY, maxX, maxY, candidateObjectIds);
 
-    for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
-        if (!object || !candidateObjectIds.contains(object->objectId())) {
+    QVector<QPair<int, quint64>> orderedCandidateIds;
+    orderedCandidateIds.reserve(candidateObjectIds.size());
+    for (quint64 objectId : candidateObjectIds) {
+        const auto orderIt = m_objectOrderById.constFind(objectId);
+        if (orderIt == m_objectOrderById.cend()) {
+            continue;
+        }
+        orderedCandidateIds.push_back(qMakePair(orderIt.value(), objectId));
+    }
+    std::sort(orderedCandidateIds.begin(), orderedCandidateIds.end(),
+              [](const QPair<int, quint64>& lhs, const QPair<int, quint64>& rhs) {
+                  return lhs.first < rhs.first;
+              });
+
+    for (const auto& orderedCandidate : orderedCandidateIds) {
+        const quint64 objectId = orderedCandidate.second;
+        const auto objectIt = m_objectById.constFind(objectId);
+        if (objectIt == m_objectById.cend() || !objectIt.value()) {
             continue;
         }
 
-        const auto boundsIt = m_objectBoundsById.constFind(object->objectId());
+        const auto boundsIt = m_objectBoundsById.constFind(objectId);
         if (boundsIt != m_objectBoundsById.cend()
             && !boundsIntersectRect(boundsIt.value(), minX, minY, maxX, maxY)) {
             continue;
         }
 
-        object->appendRenderPrimitives(outPrimitives);
+        objectIt.value()->appendRenderPrimitives(outPrimitives);
     }
 
     for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
@@ -152,13 +169,29 @@ QVector<quint64> LayoutSceneNode::matchingObjectIdsAt(
     QSet<quint64> candidateObjectIds;
     collectCandidateObjectIdsInRect(x, y, x, y, candidateObjectIds);
 
-    for (int i = m_objects.size() - 1; i >= 0; --i) {
-        const std::shared_ptr<LayoutObjectModel>& object = m_objects[i];
-        if (!object || !candidateObjectIds.contains(object->objectId())) {
+    QVector<QPair<int, quint64>> orderedCandidateIds;
+    orderedCandidateIds.reserve(candidateObjectIds.size());
+    for (quint64 objectId : candidateObjectIds) {
+        const auto orderIt = m_objectOrderById.constFind(objectId);
+        if (orderIt == m_objectOrderById.cend()) {
             continue;
         }
+        orderedCandidateIds.push_back(qMakePair(orderIt.value(), objectId));
+    }
+    std::sort(orderedCandidateIds.begin(), orderedCandidateIds.end(),
+              [](const QPair<int, quint64>& lhs, const QPair<int, quint64>& rhs) {
+                  return lhs.first > rhs.first;
+              });
 
-        const auto boundsIt = m_objectBoundsById.constFind(object->objectId());
+    for (const auto& orderedCandidate : orderedCandidateIds) {
+        const quint64 objectId = orderedCandidate.second;
+        const auto objectIt = m_objectById.constFind(objectId);
+        if (objectIt == m_objectById.cend() || !objectIt.value()) {
+            continue;
+        }
+        const std::shared_ptr<LayoutObjectModel>& object = objectIt.value();
+
+        const auto boundsIt = m_objectBoundsById.constFind(objectId);
         if (boundsIt != m_objectBoundsById.cend() && !boundsContainPoint(boundsIt.value(), x, y)) {
             continue;
         }
@@ -233,7 +266,13 @@ bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
         if (m_objects[i] && m_objects[i]->objectId() == objectId) {
             deindexObject(objectId);
             m_objectById.remove(objectId);
+            m_objectOrderById.remove(objectId);
             m_objects.removeAt(i);
+            for (int j = i; j < m_objects.size(); ++j) {
+                if (m_objects[j]) {
+                    m_objectOrderById[m_objects[j]->objectId()] = j;
+                }
+            }
             return true;
         }
     }

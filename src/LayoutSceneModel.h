@@ -119,6 +119,7 @@ private:
     QVector<std::shared_ptr<LayoutObjectModel>> m_objects;
     QVector<std::shared_ptr<LayoutSceneNode>> m_children;
     QHash<quint64, std::shared_ptr<LayoutObjectModel>> m_objectById;
+    QHash<quint64, int> m_objectOrderById;
     QHash<quint64, LayoutObjectModel::Bounds> m_objectBoundsById;
     QHash<quint64, QVector<quint64>> m_tileObjectIds;
     QHash<quint64, QVector<quint64>> m_objectTileKeys;
