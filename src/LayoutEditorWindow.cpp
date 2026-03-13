@@ -12,6 +12,7 @@
 #include <QKeySequence>
 #include <QIcon>
 #include <QLabel>
+#include <QElapsedTimer>
 #include <QMouseEvent>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
@@ -28,6 +29,7 @@
 #include <QWheelEvent>
 #include <QWidget>
 #include <QtGlobal>
+#include <QDebug>
 #include <cmath>
 #include <cstdlib>
 #include <memory>
@@ -158,9 +160,9 @@ public:
     }
 };
 
-// This backend acts as the integration seam for a true QOpenGLWidget/VBO path.
-// In this step it uses a simplified painter-based style to keep behavior stable
-// while enabling runtime backend selection and future GPU implementation.
+// OpenGL backend:
+// - detailed patterned mode remains painter-based for visual parity,
+// - simplified/coarse modes submit triangles (and selection outlines) via GL.
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
     OpenGLPrimitiveRenderBackend() = default;
@@ -181,7 +183,12 @@ public:
         }
 
         QVector<float> triangleVertexData;
+        QVector<float> lineVertexData;
         triangleVertexData.reserve(items.size() * 36);
+        lineVertexData.reserve(items.size() * 24);
+
+        QHash<QRgb, QVector<const RenderItem*>> styleBuckets;
+        styleBuckets.reserve(std::max(8, items.size() / 32));
 
         for (const RenderItem& item : items) {
             if (item.tinyOnScreen && !item.selected) {
@@ -201,35 +208,44 @@ public:
                 fillColor = fillColor.lighter(120);
             }
 
+            styleBuckets[fillColor.rgba()].push_back(&item);
+        }
+
+        for (auto it = styleBuckets.cbegin(); it != styleBuckets.cend(); ++it) {
+            QColor fillColor = QColor::fromRgba(it.key());
+
             const float r = fillColor.redF();
             const float g = fillColor.greenF();
             const float b = fillColor.blueF();
             const float a = fillColor.alphaF();
 
-            const int vertexCount = item.polygon.size();
-            if (vertexCount < 3) {
-                continue;
-            }
+            for (const RenderItem* itemPtr : it.value()) {
+                if (!itemPtr) {
+                    continue;
+                }
+                const RenderItem& item = *itemPtr;
 
-            const QPointF origin = item.polygon[0];
-            for (int i = 1; i < vertexCount - 1; ++i) {
-                const QPointF p1 = item.polygon[i];
-                const QPointF p2 = item.polygon[i + 1];
-                appendVertex(triangleVertexData, origin.x(), origin.y(), r, g, b, a);
-                appendVertex(triangleVertexData, p1.x(), p1.y(), r, g, b, a);
-                appendVertex(triangleVertexData, p2.x(), p2.y(), r, g, b, a);
-            }
+                const int vertexCount = item.polygon.size();
+                if (vertexCount < 3) {
+                    continue;
+                }
 
-            if (item.selected) {
-                QColor outlineColor = QColor("#ffffff");
-                outlineColor.setAlpha(255);
-                painter.setPen(QPen(outlineColor, 2, Qt::SolidLine));
-                painter.setBrush(Qt::NoBrush);
-                painter.drawPolygon(item.polygon);
+                const QPointF origin = item.polygon[0];
+                for (int i = 1; i < vertexCount - 1; ++i) {
+                    const QPointF p1 = item.polygon[i];
+                    const QPointF p2 = item.polygon[i + 1];
+                    appendVertex(triangleVertexData, origin.x(), origin.y(), r, g, b, a);
+                    appendVertex(triangleVertexData, p1.x(), p1.y(), r, g, b, a);
+                    appendVertex(triangleVertexData, p2.x(), p2.y(), r, g, b, a);
+                }
+
+                if (item.selected) {
+                    appendOutlineSegments(lineVertexData, item.polygon, QColor("#ffffff"));
+                }
             }
         }
 
-        if (triangleVertexData.isEmpty()) {
+        if (triangleVertexData.isEmpty() && lineVertexData.isEmpty()) {
             return;
         }
 
@@ -238,8 +254,7 @@ public:
         m_program.setUniformValue("uViewport", QVector2D(viewportSize.width(), viewportSize.height()));
 
         m_vertexBuffer.bind();
-        m_vertexBuffer.allocate(triangleVertexData.constData(),
-                               static_cast<int>(triangleVertexData.size() * sizeof(float)));
+        uploadVertexData(triangleVertexData, lineVertexData);
 
         constexpr int stride = 6 * static_cast<int>(sizeof(float));
         m_program.enableAttributeArray(0);
@@ -251,13 +266,35 @@ public:
         gl->glDisable(GL_DEPTH_TEST);
         gl->glEnable(GL_BLEND);
         gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        gl->glDrawArrays(GL_TRIANGLES, 0, static_cast<int>(triangleVertexData.size() / 6));
+        const int triangleVertexCount = static_cast<int>(triangleVertexData.size() / 6);
+        if (triangleVertexCount > 0) {
+            gl->glDrawArrays(GL_TRIANGLES, 0, triangleVertexCount);
+        }
+
+        const int lineVertexCount = static_cast<int>(lineVertexData.size() / 6);
+        if (lineVertexCount > 0) {
+            gl->glLineWidth(2.0f);
+            gl->glDrawArrays(GL_LINES, triangleVertexCount, lineVertexCount);
+        }
 
         m_program.disableAttributeArray(0);
         m_program.disableAttributeArray(1);
         m_vertexBuffer.release();
         m_program.release();
         painter.endNativePainting();
+
+        m_frameCounter += 1;
+        m_trianglesSubmitted += (triangleVertexData.size() / 18);
+        if (!m_statsTimer.isValid()) {
+            m_statsTimer.start();
+        } else if (m_frameCounter % 120 == 0) {
+            const qint64 elapsedMs = std::max<qint64>(1, m_statsTimer.elapsed());
+            qInfo().noquote() << QString("OpenGL backend stats: frames=%1 triangles=%2 avgTriangles/frame=%3 elapsedMs=%4")
+                                     .arg(m_frameCounter)
+                                     .arg(m_trianglesSubmitted)
+                                     .arg(m_trianglesSubmitted / std::max<quint64>(1, m_frameCounter))
+                                     .arg(elapsedMs);
+        }
     }
 
     void endFrame(QPainter& painter, const QSize& viewportSize) override {
@@ -279,6 +316,52 @@ private:
         out.push_back(g);
         out.push_back(b);
         out.push_back(a);
+    }
+
+    static void appendOutlineSegments(QVector<float>& out,
+                                      const QPolygonF& polygon,
+                                      const QColor& color) {
+        const float r = color.redF();
+        const float g = color.greenF();
+        const float b = color.blueF();
+        const float a = color.alphaF();
+        const int vertexCount = polygon.size();
+        if (vertexCount < 2) {
+            return;
+        }
+
+        for (int i = 0; i < vertexCount; ++i) {
+            const QPointF p1 = polygon[i];
+            const QPointF p2 = polygon[(i + 1) % vertexCount];
+            appendVertex(out, p1.x(), p1.y(), r, g, b, a);
+            appendVertex(out, p2.x(), p2.y(), r, g, b, a);
+        }
+    }
+
+    void uploadVertexData(const QVector<float>& triangleVertexData,
+                          const QVector<float>& lineVertexData) {
+        const qsizetype totalFloats = triangleVertexData.size() + lineVertexData.size();
+        const qsizetype totalBytes = totalFloats * static_cast<qsizetype>(sizeof(float));
+        if (totalBytes <= 0) {
+            return;
+        }
+
+        if (totalBytes > m_vertexCapacityBytes) {
+            m_vertexBuffer.allocate(static_cast<int>(totalBytes));
+            m_vertexCapacityBytes = totalBytes;
+        }
+
+        qsizetype byteOffset = 0;
+        if (!triangleVertexData.isEmpty()) {
+            const qsizetype triangleBytes = triangleVertexData.size() * static_cast<qsizetype>(sizeof(float));
+            m_vertexBuffer.write(byteOffset, triangleVertexData.constData(), static_cast<int>(triangleBytes));
+            byteOffset += triangleBytes;
+        }
+
+        if (!lineVertexData.isEmpty()) {
+            const qsizetype lineBytes = lineVertexData.size() * static_cast<qsizetype>(sizeof(float));
+            m_vertexBuffer.write(byteOffset, lineVertexData.constData(), static_cast<int>(lineBytes));
+        }
     }
 
     void drawDetailedWithPainter(QPainter& painter, const QVector<RenderItem>& items) {
@@ -344,6 +427,10 @@ private:
     bool m_initialized{false};
     QOpenGLShaderProgram m_program;
     QOpenGLBuffer m_vertexBuffer;
+    qsizetype m_vertexCapacityBytes{0};
+    QElapsedTimer m_statsTimer;
+    quint64 m_frameCounter{0};
+    quint64 m_trianglesSubmitted{0};
 };
 } // namespace
 
