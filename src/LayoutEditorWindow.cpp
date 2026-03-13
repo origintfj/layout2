@@ -165,7 +165,8 @@ public:
 // - simplified/coarse modes submit triangles (and selection outlines) via GL.
 class OpenGLPrimitiveRenderBackend final : public PrimitiveRenderBackend {
 public:
-    OpenGLPrimitiveRenderBackend() = default;
+    OpenGLPrimitiveRenderBackend()
+        : m_statsEnabled(qEnvironmentVariableIntValue("LAYOUT2_RENDER_STATS") != 0) {}
 
     void beginFrame(QPainter& painter, const QColor& clearColor, const QSize& viewportSize) override {
         Q_UNUSED(painter);
@@ -190,12 +191,17 @@ public:
         QHash<QRgb, QVector<const RenderItem*>> styleBuckets;
         styleBuckets.reserve(std::max(8, items.size() / 32));
 
+        int skippedTinyCount = 0;
+        int painterDetailedCount = 0;
+
         for (const RenderItem& item : items) {
             if (item.tinyOnScreen && !item.selected) {
+                ++skippedTinyCount;
                 continue;
             }
 
             if (item.detailLevel == 0) {
+                ++painterDetailedCount;
                 painter.setPen(QPen(item.outlineColor, 1, item.preview ? Qt::DashLine : Qt::SolidLine));
                 painter.setBrush(item.patternBrush);
                 painter.drawPolygon(item.polygon);
@@ -285,15 +291,26 @@ public:
 
         m_frameCounter += 1;
         m_trianglesSubmitted += (triangleVertexData.size() / 18);
+        m_linesSubmitted += (lineVertexData.size() / 12);
+        m_skippedTinyCount += static_cast<quint64>(std::max(0, skippedTinyCount));
+        m_painterDetailedCount += static_cast<quint64>(std::max(0, painterDetailedCount));
+        if (!m_statsEnabled) {
+            return;
+        }
+
         if (!m_statsTimer.isValid()) {
             m_statsTimer.start();
         } else if (m_frameCounter % 120 == 0) {
             const qint64 elapsedMs = std::max<qint64>(1, m_statsTimer.elapsed());
-            qInfo().noquote() << QString("OpenGL backend stats: frames=%1 triangles=%2 avgTriangles/frame=%3 elapsedMs=%4")
+            qInfo().noquote() << QString("OpenGL backend stats: frames=%1 triangles=%2 lines=%3 avgTriangles/frame=%4 avgLines/frame=%5 avgMs/frame=%6 tinySkipped=%7 detailedPainter=%8")
                                      .arg(m_frameCounter)
                                      .arg(m_trianglesSubmitted)
+                                     .arg(m_linesSubmitted)
                                      .arg(m_trianglesSubmitted / std::max<quint64>(1, m_frameCounter))
-                                     .arg(elapsedMs);
+                                     .arg(m_linesSubmitted / std::max<quint64>(1, m_frameCounter))
+                                     .arg(static_cast<double>(elapsedMs) / std::max<quint64>(1, m_frameCounter), 0, 'f', 3)
+                                     .arg(m_skippedTinyCount)
+                                     .arg(m_painterDetailedCount);
         }
     }
 
@@ -428,9 +445,13 @@ private:
     QOpenGLShaderProgram m_program;
     QOpenGLBuffer m_vertexBuffer;
     qsizetype m_vertexCapacityBytes{0};
+    bool m_statsEnabled{false};
     QElapsedTimer m_statsTimer;
     quint64 m_frameCounter{0};
     quint64 m_trianglesSubmitted{0};
+    quint64 m_linesSubmitted{0};
+    quint64 m_skippedTinyCount{0};
+    quint64 m_painterDetailedCount{0};
 };
 } // namespace
 

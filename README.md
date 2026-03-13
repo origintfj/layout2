@@ -233,6 +233,14 @@ Current status:
 - `raster`: full current rendering path.
 - `opengl`: uses a `QOpenGLWidget` canvas path, OpenGL framebuffer clears, and GPU triangle submission for simplified/coarse primitives (detailed patterned mode still uses painter path).
 
+Optional diagnostics:
+
+```bash
+export LAYOUT2_RENDER_STATS=1
+```
+
+When enabled, the OpenGL backend prints periodic render statistics (frames, triangles, lines, and per-frame averages).
+
 ```bash
 cmake -S . -B build
 cmake --build build
