@@ -762,6 +762,8 @@ protected:
             }
         }
 
+        drawDragBoundsPreview(painter);
+
         m_renderBackend->endFrame(painter, size());
 
     }
@@ -792,16 +794,18 @@ protected:
             const qint64 worldX = static_cast<qint64>(world.x());
             const qint64 worldY = static_cast<qint64>(world.y());
 
+            m_leftDragInProgress = true;
+            m_leftDragAnchorX = worldX;
+            m_leftDragAnchorY = worldY;
+            m_leftDragCurrentX = worldX;
+            m_leftDragCurrentY = worldY;
+
             if (m_activeTool == "select") {
                 handleSelectionClick(worldX, worldY);
-                event->accept();
-                return;
             }
 
-            emit commandRequested(QString("canvas press %1 %2 1")
-                                      .arg(worldX)
-                                      .arg(worldY),
-                                true);
+            update();
+            event->accept();
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -825,11 +829,17 @@ protected:
             update();
         }
 
-        emit commandRequested(QString("canvas move %1 %2 %3")
-                                  .arg(worldX)
-                                  .arg(worldY)
-                                  .arg(leftDown ? 1 : 0),
-                            false);
+        if (leftDown && m_leftDragInProgress) {
+            m_leftDragCurrentX = worldX;
+            m_leftDragCurrentY = worldY;
+            emit commandRequested(QString("canvas preview %1 %2 %3 %4")
+                                      .arg(m_leftDragAnchorX)
+                                      .arg(m_leftDragAnchorY)
+                                      .arg(m_leftDragCurrentX)
+                                      .arg(m_leftDragCurrentY),
+                                false);
+            update();
+        }
 
         // Middle-button drag emits view pan commands.
         if (m_middlePanning && (event->buttons() & Qt::MiddleButton)) {
@@ -856,10 +866,18 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
             const QPointF world = screenToWorld(mouseEventPoint(event));
-            emit commandRequested(QString("canvas release %1 %2 1")
-                                      .arg(static_cast<qint64>(world.x()))
-                                      .arg(static_cast<qint64>(world.y())),
-                                false);
+            m_leftDragCurrentX = static_cast<qint64>(world.x());
+            m_leftDragCurrentY = static_cast<qint64>(world.y());
+            emit commandRequested(QString("canvas drag %1 %2 %3 %4 1")
+                                      .arg(m_leftDragAnchorX)
+                                      .arg(m_leftDragAnchorY)
+                                      .arg(m_leftDragCurrentX)
+                                      .arg(m_leftDragCurrentY),
+                                true);
+            emit commandRequested("canvas preview clear", false);
+            m_leftDragInProgress = false;
+            update();
+            event->accept();
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -1178,6 +1196,20 @@ private:
         }
     }
 
+    void drawDragBoundsPreview(QPainter& painter) {
+        if (!m_leftDragInProgress) {
+            return;
+        }
+
+        const QPointF anchorScreen = worldToScreen(m_leftDragAnchorX, m_leftDragAnchorY);
+        const QPointF currentScreen = worldToScreen(m_leftDragCurrentX, m_leftDragCurrentY);
+        const QRectF bounds = QRectF(anchorScreen, currentScreen).normalized();
+
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor("#ffffff"), 1));
+        painter.drawRect(bounds);
+    }
+
     const LayoutSceneNode* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
     QHash<quint64, int> m_layerIndexByCode;
@@ -1195,6 +1227,12 @@ private:
 
     bool m_editPreviewEnabled{false};
     bool m_middlePanning{false};
+
+    bool m_leftDragInProgress{false};
+    qint64 m_leftDragAnchorX{0};
+    qint64 m_leftDragAnchorY{0};
+    qint64 m_leftDragCurrentX{0};
+    qint64 m_leftDragCurrentY{0};
 
     QPointF m_lastPanPoint;
     double m_zoom{1.0};

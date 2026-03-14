@@ -52,16 +52,16 @@ tool set <toolName>
 ### `canvas` command family
 
 ```tcl
-canvas press <x:int64> <y:int64> <button>
-canvas move <x:int64> <y:int64> <leftDown>
-canvas release <x:int64> <y:int64> <button>
+canvas preview <anchorX:int64> <anchorY:int64> <currentX:int64> <currentY:int64>
+canvas preview clear
+canvas drag <anchorX:int64> <anchorY:int64> <releaseX:int64> <releaseY:int64> <button>
 ```
 
-- `x`/`y` are signed 64-bit integer world coordinates.
-- Rectangle draw flow is Tcl-driven:
-  - `canvas press` starts preview when `tool` is `rect`, left button is `1`, and an active layer exists.
-  - `canvas move` updates preview while `leftDown == 1`.
-  - `canvas release` commits the rectangle when `button == 1` and a draw is in progress.
+- Coordinates are signed 64-bit integer world coordinates.
+- Drag flow is Tcl-driven:
+  - `canvas preview` updates tool-dependent drag preview during mouse motion.
+  - `canvas drag` is emitted on left-button release and carries both anchor and release points for commit.
+  - Commit semantics are based on the tool active at release time.
 
 ### `view` command family
 
@@ -195,7 +195,7 @@ transcript filter add <globPattern>
 Examples:
 
 ```tcl
-transcript filter add {canvas move *}
+transcript filter add {canvas preview *}
 transcript filter add {canvas *}
 ```
 
