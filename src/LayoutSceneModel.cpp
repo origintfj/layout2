@@ -215,6 +215,64 @@ QVector<quint64> LayoutSceneNode::matchingObjectIdsAt(
     return matches;
 }
 
+QVector<quint64> LayoutSceneNode::matchingObjectIdsFullyInsideRect(
+    qint64 minX,
+    qint64 minY,
+    qint64 maxX,
+    qint64 maxY,
+    const std::function<bool(const LayoutObjectModel&)>& predicate) const {
+    QVector<quint64> matches;
+    QSet<quint64> candidateObjectIds;
+    collectCandidateObjectIdsInRect(minX, minY, maxX, maxY, candidateObjectIds);
+
+    QVector<QPair<int, quint64>> orderedCandidateIds;
+    orderedCandidateIds.reserve(candidateObjectIds.size());
+    for (quint64 objectId : candidateObjectIds) {
+        const auto orderIt = m_objectOrderById.constFind(objectId);
+        if (orderIt == m_objectOrderById.cend()) {
+            continue;
+        }
+        orderedCandidateIds.push_back(qMakePair(orderIt.value(), objectId));
+    }
+    std::sort(orderedCandidateIds.begin(), orderedCandidateIds.end(),
+              [](const QPair<int, quint64>& lhs, const QPair<int, quint64>& rhs) {
+                  return lhs.first > rhs.first;
+              });
+
+    for (const auto& orderedCandidate : orderedCandidateIds) {
+        const quint64 objectId = orderedCandidate.second;
+        const auto objectIt = m_objectById.constFind(objectId);
+        if (objectIt == m_objectById.cend() || !objectIt.value()) {
+            continue;
+        }
+
+        const auto boundsIt = m_objectBoundsById.constFind(objectId);
+        if (boundsIt == m_objectBoundsById.cend()) {
+            continue;
+        }
+        if (!boundsContainedInRect(boundsIt.value(), minX, minY, maxX, maxY)) {
+            continue;
+        }
+
+        const std::shared_ptr<LayoutObjectModel>& object = objectIt.value();
+        if (!predicate(*object)) {
+            continue;
+        }
+
+        matches.push_back(object->objectId());
+    }
+
+    for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
+        const QVector<quint64> childMatches =
+            child->matchingObjectIdsFullyInsideRect(minX, minY, maxX, maxY, predicate);
+        for (quint64 objectId : childMatches) {
+            matches.push_back(objectId);
+        }
+    }
+
+    return matches;
+}
+
 bool LayoutSceneNode::collectOutlineSegmentsByObjectId(
     quint64 objectId,
     QVector<WorldLineSegment>& outSegments) const {
@@ -296,6 +354,15 @@ bool LayoutSceneNode::boundsIntersectRect(const LayoutObjectModel::Bounds& bound
                                           const qint64 maxX,
                                           const qint64 maxY) {
     return !(bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY);
+}
+
+bool LayoutSceneNode::boundsContainedInRect(const LayoutObjectModel::Bounds& bounds,
+                                            const qint64 minX,
+                                            const qint64 minY,
+                                            const qint64 maxX,
+                                            const qint64 maxY) {
+    return bounds.minX >= minX && bounds.maxX <= maxX
+           && bounds.minY >= minY && bounds.maxY <= maxY;
 }
 
 qint64 LayoutSceneNode::tileCoordFor(const qint64 coordinate) {

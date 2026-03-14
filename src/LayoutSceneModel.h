@@ -89,6 +89,12 @@ public:
     QVector<quint64> matchingObjectIdsAt(qint64 x,
                                          qint64 y,
                                          const std::function<bool(const LayoutObjectModel&)>& predicate) const;
+    QVector<quint64> matchingObjectIdsFullyInsideRect(
+        qint64 minX,
+        qint64 minY,
+        qint64 maxX,
+        qint64 maxY,
+        const std::function<bool(const LayoutObjectModel&)>& predicate) const;
     bool collectOutlineSegmentsByObjectId(quint64 objectId, QVector<WorldLineSegment>& outSegments) const;
     const LayoutObjectModel* findObjectById(quint64 objectId) const;
     bool removeObjectById(quint64 objectId);
@@ -101,6 +107,11 @@ private:
                                     qint64 minY,
                                     qint64 maxX,
                                     qint64 maxY);
+    static bool boundsContainedInRect(const LayoutObjectModel::Bounds& bounds,
+                                      qint64 minX,
+                                      qint64 minY,
+                                      qint64 maxX,
+                                      qint64 maxY);
     static qint64 tileCoordFor(qint64 coordinate);
     static quint64 tileKey(qint64 tileX, qint64 tileY);
 
