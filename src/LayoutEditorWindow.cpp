@@ -724,6 +724,8 @@ signals:
     void commandRequested(const QString& command, bool requestActivation);
     void objectDeletionRequested(quint64 objectId);
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
+    void leftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
+    void canvasClicked(qint64 worldX, qint64 worldY);
 
 protected:
     enum class RenderDetailLevel {
@@ -762,6 +764,7 @@ protected:
             }
         }
 
+        drawLeftDragPreview(painter);
         m_renderBackend->endFrame(painter, size());
 
     }
@@ -791,17 +794,16 @@ protected:
             const QPointF world = screenToWorld(mouseEventPoint(event));
             const qint64 worldX = static_cast<qint64>(world.x());
             const qint64 worldY = static_cast<qint64>(world.y());
-
-            if (m_activeTool == "select") {
-                handleSelectionClick(worldX, worldY);
-                event->accept();
-                return;
-            }
-
-            emit commandRequested(QString("canvas press %1 %2 1")
-                                      .arg(worldX)
-                                      .arg(worldY),
-                                true);
+            m_leftAnchorX = worldX;
+            m_leftAnchorY = worldY;
+            m_leftCurrentX = worldX;
+            m_leftCurrentY = worldY;
+            m_leftDragActive = true;
+            m_leftDragMoved = false;
+            emit leftDragPreviewChanged(true, m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
+            update();
+            event->accept();
+            return;
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -822,14 +824,17 @@ protected:
 
         if (m_activeTool == "select") {
             m_hoveredObjectId = hoveredSelectableObjectIdAt(worldX, worldY);
-            update();
         }
 
-        emit commandRequested(QString("canvas move %1 %2 %3")
-                                  .arg(worldX)
-                                  .arg(worldY)
-                                  .arg(leftDown ? 1 : 0),
-                            false);
+        if (m_leftDragActive && leftDown) {
+            m_leftCurrentX = worldX;
+            m_leftCurrentY = worldY;
+            m_leftDragMoved = true;
+            emit leftDragPreviewChanged(true, m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
+            update();
+        } else if (m_activeTool == "select") {
+            update();
+        }
 
         // Middle-button drag emits view pan commands.
         if (m_middlePanning && (event->buttons() & Qt::MiddleButton)) {
@@ -856,10 +861,36 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
             const QPointF world = screenToWorld(mouseEventPoint(event));
-            emit commandRequested(QString("canvas release %1 %2 1")
-                                      .arg(static_cast<qint64>(world.x()))
-                                      .arg(static_cast<qint64>(world.y())),
-                                false);
+            const qint64 worldX = static_cast<qint64>(world.x());
+            const qint64 worldY = static_cast<qint64>(world.y());
+
+            if (m_leftDragActive) {
+                m_leftCurrentX = worldX;
+                m_leftCurrentY = worldY;
+                const bool didDrag = m_leftDragMoved
+                                     || m_leftAnchorX != m_leftCurrentX
+                                     || m_leftAnchorY != m_leftCurrentY;
+                m_leftDragActive = false;
+                emit leftDragPreviewChanged(false, m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
+                if (didDrag) {
+                    emit commandRequested(QString("canvas drag %1 %2 %3 %4")
+                                              .arg(m_leftAnchorX)
+                                              .arg(m_leftAnchorY)
+                                              .arg(m_leftCurrentX)
+                                              .arg(m_leftCurrentY),
+                                        true);
+                } else {
+                    if (m_activeTool == "select") {
+                        handleSelectionClick(worldX, worldY);
+                    }
+                    emit canvasClicked(worldX, worldY);
+                    emit commandRequested(QString("canvas click %1 %2")
+                                              .arg(worldX)
+                                              .arg(worldY),
+                                        true);
+                }
+                update();
+            }
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -959,6 +990,26 @@ private:
         const QBrush brush = patternBrushFor(fillColor, pattern);
         m_fillBrushCache.insert(cacheKey, brush);
         return brush;
+    }
+
+    void drawLeftDragPreview(QPainter& painter) {
+        if (!m_leftDragActive) {
+            return;
+        }
+
+        const qint64 minX = std::min(m_leftAnchorX, m_leftCurrentX);
+        const qint64 minY = std::min(m_leftAnchorY, m_leftCurrentY);
+        const qint64 maxX = std::max(m_leftAnchorX, m_leftCurrentX);
+        const qint64 maxY = std::max(m_leftAnchorY, m_leftCurrentY);
+
+        const QPointF p1 = worldToScreen(minX, minY);
+        const QPointF p2 = worldToScreen(maxX, maxY);
+        const QRectF rect(QPointF(std::min(p1.x(), p2.x()), std::min(p1.y(), p2.y())),
+                          QPointF(std::max(p1.x(), p2.x()), std::max(p1.y(), p2.y())));
+
+        painter.setPen(QPen(QColor("#ffffff"), 1, Qt::SolidLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(rect);
     }
 
     void drawHoverOutline(QPainter& painter, const QVector<WorldLineSegment>& segments) {
@@ -1195,6 +1246,12 @@ private:
 
     bool m_editPreviewEnabled{false};
     bool m_middlePanning{false};
+    bool m_leftDragActive{false};
+    bool m_leftDragMoved{false};
+    qint64 m_leftAnchorX{0};
+    qint64 m_leftAnchorY{0};
+    qint64 m_leftCurrentX{0};
+    qint64 m_leftCurrentY{0};
 
     QPointF m_lastPanPoint;
     double m_zoom{1.0};
@@ -1270,6 +1327,10 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
             this, &LayoutEditorWindow::onObjectDeletionRequested);
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
+    connect(m_canvas, &LayoutCanvas::canvasClicked,
+            this, &LayoutEditorWindow::onCanvasClick);
+    connect(m_canvas, &LayoutCanvas::leftDragPreviewChanged,
+            this, &LayoutEditorWindow::onLeftDragPreviewChanged);
 
     qApp->installEventFilter(this);
 
@@ -1444,6 +1505,46 @@ void LayoutEditorWindow::onMouseWorldPositionChanged(qint64 worldX, qint64 world
         m_mouseWorldY = worldY;
     }
     refreshStatusLabel();
+}
+
+void LayoutEditorWindow::onCanvasClick(qint64 worldX, qint64 worldY) {
+    Q_UNUSED(worldX);
+    Q_UNUSED(worldY);
+}
+
+void LayoutEditorWindow::onLeftDragPreviewChanged(bool enabled,
+                                                  qint64 anchorX,
+                                                  qint64 anchorY,
+                                                  qint64 currentX,
+                                                  qint64 currentY) {
+    if (!enabled) {
+        m_canvas->setEditPreview(false, SceneRenderPrimitive{});
+        return;
+    }
+
+    auto it = std::find_if(m_layers.cbegin(), m_layers.cend(),
+                           [this](const LayerDefinition& layer) {
+                               return layer.name.compare(m_activeLayerName, Qt::CaseInsensitive) == 0
+                                      && layer.type.compare(m_activeLayerType, Qt::CaseInsensitive) == 0;
+                           });
+    if (it == m_layers.cend()) {
+        m_canvas->setEditPreview(false, SceneRenderPrimitive{});
+        return;
+    }
+
+    SceneRenderPrimitive primitive;
+    if (LayoutEditPreviewModel::tryBuildPreviewPrimitive(m_activeTool,
+                                                         it->nameId,
+                                                         it->typeId,
+                                                         anchorX,
+                                                         anchorY,
+                                                         currentX,
+                                                         currentY,
+                                                         primitive)) {
+        m_canvas->setEditPreview(true, primitive);
+    } else {
+        m_canvas->setEditPreview(false, SceneRenderPrimitive{});
+    }
 }
 
 void LayoutEditorWindow::refreshStatusLabel() {

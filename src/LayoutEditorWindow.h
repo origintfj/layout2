@@ -46,6 +46,8 @@ public slots:
     // Edit preview updates received from Tcl execution side.
     void onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive);
     void onPrimitiveCommitted(const SceneRenderPrimitive& primitive);
+    void onCanvasClick(qint64 worldX, qint64 worldY);
+    void onLeftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
 
 signals:
     // Single dispatch point for UI->Tcl command routing.

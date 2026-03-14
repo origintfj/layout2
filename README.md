@@ -52,16 +52,15 @@ tool set <toolName>
 ### `canvas` command family
 
 ```tcl
-canvas press <x:int64> <y:int64> <button>
-canvas move <x:int64> <y:int64> <leftDown>
-canvas release <x:int64> <y:int64> <button>
+canvas click <x:int64> <y:int64>
+canvas drag <anchorX:int64> <anchorY:int64> <releaseX:int64> <releaseY:int64>
 ```
 
-- `x`/`y` are signed 64-bit integer world coordinates.
-- Rectangle draw flow is Tcl-driven:
-  - `canvas press` starts preview when `tool` is `rect`, left button is `1`, and an active layer exists.
-  - `canvas move` updates preview while `leftDown == 1`.
-  - `canvas release` commits the rectangle when `button == 1` and a draw is in progress.
+- Coordinates are signed 64-bit integer world coordinates.
+- The canvas now emits one Tcl command per completed gesture:
+  - `canvas click` for left-button press/release without dragging.
+  - `canvas drag` on left-button release after a drag, including both anchor and release points.
+- Drag preview updates are handled in the canvas/editor path directly (bypassing Tcl for performance).
 
 ### `view` command family
 
