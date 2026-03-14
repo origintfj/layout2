@@ -22,6 +22,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPolygonF>
+#include <QSet>
 #include <QSize>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -771,8 +772,12 @@ protected:
 
     void keyPressEvent(QKeyEvent* event) override {
         if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
-            && m_selectedObjectId != 0) {
-            emit objectDeletionRequested(m_selectedObjectId);
+            && !m_selectedObjectIds.isEmpty()) {
+            const QVector<quint64> selectedIds = m_selectedObjectIds.values().toVector();
+            for (quint64 objectId : selectedIds) {
+                emit objectDeletionRequested(objectId);
+            }
+            m_selectedObjectIds.clear();
             m_selectedObjectId = 0;
             update();
             event->accept();
@@ -873,12 +878,16 @@ protected:
                 m_leftDragActive = false;
                 emit leftDragPreviewChanged(false, m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
                 if (didDrag) {
-                    emit commandRequested(QString("canvas drag %1 %2 %3 %4")
-                                              .arg(m_leftAnchorX)
-                                              .arg(m_leftAnchorY)
-                                              .arg(m_leftCurrentX)
-                                              .arg(m_leftCurrentY),
-                                        true);
+                    if (m_activeTool == "select") {
+                        handleSelectionDrag(m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
+                    } else {
+                        emit commandRequested(QString("canvas drag %1 %2 %3 %4")
+                                                  .arg(m_leftAnchorX)
+                                                  .arg(m_leftAnchorY)
+                                                  .arg(m_leftCurrentX)
+                                                  .arg(m_leftCurrentY),
+                                            true);
+                    }
                 } else {
                     if (m_activeTool == "select") {
                         handleSelectionClick(worldX, worldY);
@@ -941,7 +950,7 @@ private:
                 item.polygon.push_back(worldToScreen(vertex.x, vertex.y));
             }
 
-            item.selected = primitive.objectId == m_selectedObjectId;
+            item.selected = primitive.objectId != 0 && m_selectedObjectIds.contains(primitive.objectId);
             item.preview = primitive.preview;
             item.detailLevel = detailLevel == RenderDetailLevel::Detailed
                                    ? 0
@@ -1136,14 +1145,51 @@ private:
         return candidates.isEmpty() ? 0 : candidates.front();
     }
 
+    void handleSelectionDrag(qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY) {
+        if (!m_rootCell) {
+            m_selectedObjectId = 0;
+            m_selectedObjectIds.clear();
+            m_hoveredObjectId = 0;
+            m_lastSelectionCandidateIds.clear();
+            m_lastSelectionPoint = QPointF();
+            m_hasSelectionPoint = false;
+            update();
+            return;
+        }
+
+        const qint64 minX = std::min(anchorX, currentX);
+        const qint64 maxX = std::max(anchorX, currentX);
+        const qint64 minY = std::min(anchorY, currentY);
+        const qint64 maxY = std::max(anchorY, currentY);
+        const QVector<quint64> selectedIds = m_rootCell->matchingObjectIdsFullyInsideRect(
+            minX,
+            minY,
+            maxX,
+            maxY,
+            [this](const LayoutObjectModel& object) {
+                const DrawnRectangle* rectangle = object.asRectangle();
+                return rectangle && isSelectableRectangle(*rectangle);
+            });
+
+        m_selectedObjectIds = QSet<quint64>(selectedIds.cbegin(), selectedIds.cend());
+        m_selectedObjectId = selectedIds.isEmpty() ? 0 : selectedIds.front();
+        m_hoveredObjectId = m_selectedObjectId;
+        m_lastSelectionCandidateIds.clear();
+        m_lastSelectionPoint = QPointF();
+        m_hasSelectionPoint = false;
+        update();
+    }
+
     void handleSelectionClick(qint64 x, qint64 y) {
 
         const QVector<quint64> candidates = selectableObjectCandidatesAt(x, y);
         if (candidates.isEmpty()) {
             m_selectedObjectId = 0;
+            m_selectedObjectIds.clear();
             m_hoveredObjectId = 0;
             m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
+            m_hasSelectionPoint = false;
             update();
             return;
         }
@@ -1166,6 +1212,9 @@ private:
             m_hoveredObjectId = candidates[(nextSelectedCandidate + 1) % candidates.size()];
         }
 
+        m_selectedObjectIds.clear();
+        m_selectedObjectIds.insert(m_selectedObjectId);
+
         m_lastSelectionCandidateIds = candidates;
         m_lastSelectionPoint = selectionPoint;
         m_hasSelectionPoint = true;
@@ -1173,8 +1222,16 @@ private:
     }
 
     void validateSelection() {
-        if (!isSelectableObjectId(m_selectedObjectId)) {
-            m_selectedObjectId = 0;
+        QSet<quint64> validSelectedIds;
+        for (quint64 objectId : m_selectedObjectIds) {
+            if (isSelectableObjectId(objectId)) {
+                validSelectedIds.insert(objectId);
+            }
+        }
+
+        m_selectedObjectIds = validSelectedIds;
+        if (!m_selectedObjectIds.contains(m_selectedObjectId)) {
+            m_selectedObjectId = m_selectedObjectIds.isEmpty() ? 0 : *m_selectedObjectIds.cbegin();
         }
     }
 
@@ -1239,6 +1296,7 @@ private:
     QString m_activeTool{"none"};
 
     quint64 m_selectedObjectId{0};
+    QSet<quint64> m_selectedObjectIds;
     quint64 m_hoveredObjectId{0};
     QVector<quint64> m_lastSelectionCandidateIds;
     QPointF m_lastSelectionPoint;
