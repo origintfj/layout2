@@ -54,6 +54,12 @@ private:
     int handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    void handleCanvasPreviewForSession(EditorSession& session,
+                                       qint64 anchorX,
+                                       qint64 anchorY,
+                                       qint64 currentX,
+                                       qint64 currentY);
+    void clearCanvasPreviewForSession(EditorSession& session);
 
     // Common argument parsing helpers.
     bool parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName);

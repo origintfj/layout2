@@ -50,6 +50,9 @@ public slots:
 signals:
     // Single dispatch point for UI->Tcl command routing.
     void commandRequested(const QString& command, bool requestActivation);
+    // High-frequency preview updates bypass Tcl command evaluation.
+    void canvasPreviewRequested(qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
+    void canvasPreviewClearRequested();
     void activationRequested();
 
 private slots:
