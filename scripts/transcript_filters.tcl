@@ -9,7 +9,6 @@
 # Suppress high-frequency mouse move command echoes in the Tcl console.
 transcript filter add {canvas preview *}
 transcript filter add {canvas click *}
-transcript filter add {canvas doubleclick *}
 transcript filter add {canvas *}
 transcript filter add {view zoom *}
 transcript filter add {view pan *}

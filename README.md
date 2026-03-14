@@ -56,7 +56,6 @@ canvas preview <anchorX:int64> <anchorY:int64> <currentX:int64> <currentY:int64>
 canvas preview clear
 canvas drag <anchorX:int64> <anchorY:int64> <releaseX:int64> <releaseY:int64> <button>
 canvas click <x:int64> <y:int64>
-canvas doubleclick <x:int64> <y:int64>
 ```
 
 - Coordinates are signed 64-bit integer world coordinates.
@@ -64,7 +63,7 @@ canvas doubleclick <x:int64> <y:int64>
   - `canvas preview` updates tool-dependent drag preview during mouse motion.
   - `canvas drag` is emitted on left-button release and carries both anchor and release points for commit.
   - Commit semantics are based on the tool active at release time.
-  - `canvas click` and `canvas doubleclick` carry world-space click locations for tool-dependent actions.
+  - `canvas click` carries world-space click locations for tool-dependent actions.
 
 ### `view` command family
 
@@ -200,7 +199,6 @@ Examples:
 ```tcl
 transcript filter add {canvas preview *}
 transcript filter add {canvas click *}
-transcript filter add {canvas doubleclick *}
 transcript filter add {canvas *}
 ```
 

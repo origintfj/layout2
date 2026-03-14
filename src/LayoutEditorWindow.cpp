@@ -2,7 +2,6 @@
 #include "LayoutSceneModel.h"
 
 #include <QAbstractItemView>
-#include <QApplication>
 #include <array>
 #include <algorithm>
 #include <QFrame>
@@ -25,7 +24,6 @@
 #include <QSize>
 #include <QSizePolicy>
 #include <QSplitter>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QVector2D>
 #include <QWheelEvent>
@@ -676,10 +674,6 @@ public:
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
         setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
-        m_singleClickTimer.setSingleShot(true);
-        connect(&m_singleClickTimer, &QTimer::timeout,
-                this, &LayoutCanvas::emitDeferredSingleClick);
-
         if (m_backendType == CanvasRenderBackendType::OpenGL) {
             m_renderBackend = std::make_unique<OpenGLPrimitiveRenderBackend>();
         } else {
@@ -798,7 +792,6 @@ protected:
             const qint64 worldX = static_cast<qint64>(world.x());
             const qint64 worldY = static_cast<qint64>(world.y());
 
-            m_singleClickTimer.stop();
             m_leftDragInProgress = true;
             m_leftDragAnchorX = worldX;
             m_leftDragAnchorY = worldY;
@@ -873,16 +866,6 @@ protected:
 
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
-            if (m_suppressNextLeftReleaseClick) {
-                m_suppressNextLeftReleaseClick = false;
-                m_leftDragInProgress = false;
-                m_leftDragExceededThreshold = false;
-                emit commandRequested("canvas preview clear", false);
-                update();
-                event->accept();
-                return;
-            }
-
             const QPointF world = screenToWorld(mouseEventPoint(event));
             m_leftDragCurrentX = static_cast<qint64>(world.x());
             m_leftDragCurrentY = static_cast<qint64>(world.y());
@@ -899,10 +882,10 @@ protected:
                 if (m_activeTool == "select") {
                     handleSelectionClick(m_leftDragCurrentX, m_leftDragCurrentY);
                 }
-
-                m_pendingClickX = m_leftDragCurrentX;
-                m_pendingClickY = m_leftDragCurrentY;
-                m_singleClickTimer.start(QApplication::doubleClickInterval());
+                emit commandRequested(QString("canvas click %1 %2")
+                                          .arg(m_leftDragCurrentX)
+                                          .arg(m_leftDragCurrentY),
+                                    true);
             }
             emit commandRequested("canvas preview clear", false);
             m_leftDragInProgress = false;
@@ -919,28 +902,6 @@ protected:
         QOpenGLWidget::mouseReleaseEvent(event);
     }
 
-    void mouseDoubleClickEvent(QMouseEvent* event) override {
-        if (event->button() == Qt::LeftButton) {
-            const QPointF world = screenToWorld(mouseEventPoint(event));
-            const qint64 worldX = static_cast<qint64>(world.x());
-            const qint64 worldY = static_cast<qint64>(world.y());
-
-            m_singleClickTimer.stop();
-            m_suppressNextLeftReleaseClick = true;
-            m_leftDragInProgress = false;
-            m_leftDragExceededThreshold = false;
-            emit commandRequested("canvas preview clear", false);
-            emit commandRequested(QString("canvas doubleclick %1 %2")
-                                      .arg(worldX)
-                                      .arg(worldY),
-                                true);
-            event->accept();
-            return;
-        }
-
-        QOpenGLWidget::mouseDoubleClickEvent(event);
-    }
-
     void wheelEvent(QWheelEvent* event) override {
         const QPointF pos = wheelEventPoint(event);
         emit commandRequested(QString("view zoom %1 %2 %3")
@@ -952,13 +913,6 @@ protected:
     }
 
 private:
-    void emitDeferredSingleClick() {
-        emit commandRequested(QString("canvas click %1 %2")
-                                  .arg(m_pendingClickX)
-                                  .arg(m_pendingClickY),
-                            true);
-    }
-
     // Converts world integer coordinates into screen-space doubles.
     QPointF worldToScreen(qint64 x, qint64 y) const {
         return QPointF((static_cast<double>(x) * m_zoom) + m_panX,
@@ -1291,14 +1245,10 @@ private:
 
     bool m_leftDragInProgress{false};
     bool m_leftDragExceededThreshold{false};
-    bool m_suppressNextLeftReleaseClick{false};
     qint64 m_leftDragAnchorX{0};
     qint64 m_leftDragAnchorY{0};
     qint64 m_leftDragCurrentX{0};
     qint64 m_leftDragCurrentY{0};
-    qint64 m_pendingClickX{0};
-    qint64 m_pendingClickY{0};
-    QTimer m_singleClickTimer;
 
     QPointF m_lastPanPoint;
     double m_zoom{1.0};

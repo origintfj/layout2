@@ -771,7 +771,7 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 
 int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
     if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: canvas <preview|drag|click|doubleclick> ..."), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: canvas <preview|drag|click> ..."), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -898,7 +898,7 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         return TCL_OK;
     }
 
-    if (sub == "click" || sub == "doubleclick" || sub == "dblclick") {
+    if (sub == "click") {
         if (objc != 4) {
             Tcl_SetResult(interp, const_cast<char*>("usage: canvas click <x> <y>"), TCL_STATIC);
             return TCL_ERROR;
@@ -914,7 +914,7 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         (void)x;
         (void)y;
 
-        // Tool-dependent single/double click behavior can be added here.
+        // Tool-dependent click behavior can be added here.
         // Keep this no-op command available to Tcl scripts and future tools.
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
