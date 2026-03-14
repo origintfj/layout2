@@ -755,12 +755,6 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 
     EditorSession* session = effectiveSession();
     if (session) {
-        const bool changedTool = session->activeTool.compare(m_defaultTool, Qt::CaseInsensitive) != 0;
-        if (changedTool && session->editInProgress) {
-            session->window->onEditPreviewChanged(false, session->editPreview);
-            session->editInProgress = false;
-        }
-
         session->activeTool = m_defaultTool;
         session->window->onToolChanged(session->activeTool);
     }
@@ -770,8 +764,8 @@ int TclConsoleWindow::handleToolCommand(Tcl_Interp* interp, int objc, Tcl_Obj* c
 }
 
 int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
-    if (objc < 5) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: canvas <press|move|release> ..."), TCL_STATIC);
+    if (objc < 4) {
+        Tcl_SetResult(interp, const_cast<char*>("usage: canvas <click|drag> ..."), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -782,100 +776,62 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         return TCL_ERROR;
     }
 
-    qint64 x = 0;
-    qint64 y = 0;
-    if (!parseInt64(interp, objv[2], x, "x") || !parseInt64(interp, objv[3], y, "y")) {
-        return TCL_ERROR;
-    }
-
-    if (sub == "press") {
-        int button = 0;
-        if (Tcl_GetIntFromObj(interp, objv[4], &button) != TCL_OK) {
-            Tcl_SetResult(interp, const_cast<char*>("invalid button"), TCL_STATIC);
+    if (sub == "click") {
+        if (objc != 4) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: canvas click <x:int64> <y:int64>"), TCL_STATIC);
             return TCL_ERROR;
         }
 
-        // Rectangle tool starts preview only for left button and valid active layer.
-        if (button == 1 && session->activeTool == "rect" && !session->activeLayerName.isEmpty()) {
-            auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
-                                   [session](const LayerDefinition& layer) {
-                                       return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
-                                              && layer.type.compare(session->activeLayerType, Qt::CaseInsensitive) == 0;
-                                   });
-            if (it == session->layers.cend()) {
-                const QString error = "No active layer";
-                Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
-                return TCL_ERROR;
-            }
-
-            session->editInProgress = true;
-            session->editAnchorX = x;
-            session->editAnchorY = y;
-            session->editLayerNameId = it->nameId;
-            session->editLayerTypeId = it->typeId;
-
-            if (LayoutEditPreviewModel::tryBuildPreviewPrimitive(session->activeTool,
-                                                                 session->editLayerNameId,
-                                                                 session->editLayerTypeId,
-                                                                 session->editAnchorX,
-                                                                 session->editAnchorY,
-                                                                 x,
-                                                                 y,
-                                                                 session->editPreview)) {
-                session->window->onEditPreviewChanged(true, session->editPreview);
-            }
+        qint64 x = 0;
+        qint64 y = 0;
+        if (!parseInt64(interp, objv[2], x, "x") || !parseInt64(interp, objv[3], y, "y")) {
+            return TCL_ERROR;
         }
 
+        Q_UNUSED(x);
+        Q_UNUSED(y);
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
 
-    if (sub == "move") {
-        int leftDown = 0;
-        if (Tcl_GetIntFromObj(interp, objv[4], &leftDown) != TCL_OK) {
-            Tcl_SetResult(interp, const_cast<char*>("invalid leftDown"), TCL_STATIC);
+    if (sub == "drag") {
+        if (objc != 6) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: canvas drag <anchorX:int64> <anchorY:int64> <releaseX:int64> <releaseY:int64>"), TCL_STATIC);
             return TCL_ERROR;
         }
 
-        if (session->editInProgress && leftDown == 1) {
-            if (LayoutEditPreviewModel::tryBuildPreviewPrimitive(session->activeTool,
-                                                                 session->editLayerNameId,
-                                                                 session->editLayerTypeId,
-                                                                 session->editAnchorX,
-                                                                 session->editAnchorY,
-                                                                 x,
-                                                                 y,
-                                                                 session->editPreview)) {
-                session->window->onEditPreviewChanged(true, session->editPreview);
-            }
-        }
-
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
-        return TCL_OK;
-    }
-
-    if (sub == "release") {
-        int button = 0;
-        if (Tcl_GetIntFromObj(interp, objv[4], &button) != TCL_OK) {
-            Tcl_SetResult(interp, const_cast<char*>("invalid button"), TCL_STATIC);
+        qint64 anchorX = 0;
+        qint64 anchorY = 0;
+        qint64 releaseX = 0;
+        qint64 releaseY = 0;
+        if (!parseInt64(interp, objv[2], anchorX, "anchorX")
+            || !parseInt64(interp, objv[3], anchorY, "anchorY")
+            || !parseInt64(interp, objv[4], releaseX, "releaseX")
+            || !parseInt64(interp, objv[5], releaseY, "releaseY")) {
             return TCL_ERROR;
         }
 
-        if (button == 1 && session->editInProgress) {
-            SceneRenderPrimitive primitive{};
-            if (LayoutEditPreviewModel::tryBuildCommittedPrimitive(session->activeTool,
-                                                                   session->editLayerNameId,
-                                                                   session->editLayerTypeId,
-                                                                   session->editAnchorX,
-                                                                   session->editAnchorY,
-                                                                   x,
-                                                                   y,
-                                                                   primitive)) {
-                session->window->onPrimitiveCommitted(primitive);
-            }
+        auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
+                               [session](const LayerDefinition& layer) {
+                                   return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
+                                          && layer.type.compare(session->activeLayerType, Qt::CaseInsensitive) == 0;
+                               });
+        if (it == session->layers.cend()) {
+            const QString error = "No active layer";
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(error.toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
 
-            session->window->onEditPreviewChanged(false, session->editPreview);
-            session->editInProgress = false;
+        SceneRenderPrimitive primitive{};
+        if (LayoutEditPreviewModel::tryBuildCommittedPrimitive(session->activeTool,
+                                                               it->nameId,
+                                                               it->typeId,
+                                                               anchorX,
+                                                               anchorY,
+                                                               releaseX,
+                                                               releaseY,
+                                                               primitive)) {
+            session->window->onPrimitiveCommitted(primitive);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
