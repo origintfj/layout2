@@ -25,6 +25,7 @@
 #include <QSize>
 #include <QSizePolicy>
 #include <QSplitter>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QVector2D>
 #include <QWheelEvent>
@@ -675,6 +676,9 @@ public:
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
         setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+        m_singleClickTimer.setSingleShot(true);
+        connect(&m_singleClickTimer, &QTimer::timeout,
+                this, &LayoutCanvas::emitDeferredSingleClick);
 
         if (m_backendType == CanvasRenderBackendType::OpenGL) {
             m_renderBackend = std::make_unique<OpenGLPrimitiveRenderBackend>();
@@ -794,18 +798,17 @@ protected:
             const qint64 worldX = static_cast<qint64>(world.x());
             const qint64 worldY = static_cast<qint64>(world.y());
 
+            m_singleClickTimer.stop();
             m_leftDragInProgress = true;
             m_leftDragAnchorX = worldX;
             m_leftDragAnchorY = worldY;
             m_leftDragCurrentX = worldX;
             m_leftDragCurrentY = worldY;
-
-            if (m_activeTool == "select") {
-                handleSelectionClick(worldX, worldY);
-            }
+            m_leftDragExceededThreshold = false;
 
             update();
             event->accept();
+            return;
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -832,6 +835,11 @@ protected:
         if (leftDown && m_leftDragInProgress) {
             m_leftDragCurrentX = worldX;
             m_leftDragCurrentY = worldY;
+            const qint64 dragDistance = std::llabs(m_leftDragCurrentX - m_leftDragAnchorX)
+                                       + std::llabs(m_leftDragCurrentY - m_leftDragAnchorY);
+            if (dragDistance > 2) {
+                m_leftDragExceededThreshold = true;
+            }
             emit commandRequested(QString("canvas preview %1 %2 %3 %4")
                                       .arg(m_leftDragAnchorX)
                                       .arg(m_leftDragAnchorY)
@@ -868,16 +876,30 @@ protected:
             const QPointF world = screenToWorld(mouseEventPoint(event));
             m_leftDragCurrentX = static_cast<qint64>(world.x());
             m_leftDragCurrentY = static_cast<qint64>(world.y());
-            emit commandRequested(QString("canvas drag %1 %2 %3 %4 1")
-                                      .arg(m_leftDragAnchorX)
-                                      .arg(m_leftDragAnchorY)
-                                      .arg(m_leftDragCurrentX)
-                                      .arg(m_leftDragCurrentY),
-                                true);
+            const qint64 dragDistance = std::llabs(m_leftDragCurrentX - m_leftDragAnchorX)
+                                       + std::llabs(m_leftDragCurrentY - m_leftDragAnchorY);
+            if (dragDistance > 2 || m_leftDragExceededThreshold) {
+                emit commandRequested(QString("canvas drag %1 %2 %3 %4 1")
+                                          .arg(m_leftDragAnchorX)
+                                          .arg(m_leftDragAnchorY)
+                                          .arg(m_leftDragCurrentX)
+                                          .arg(m_leftDragCurrentY),
+                                    true);
+            } else {
+                if (m_activeTool == "select") {
+                    handleSelectionClick(m_leftDragCurrentX, m_leftDragCurrentY);
+                }
+
+                m_pendingClickX = m_leftDragCurrentX;
+                m_pendingClickY = m_leftDragCurrentY;
+                m_singleClickTimer.start(QApplication::doubleClickInterval());
+            }
             emit commandRequested("canvas preview clear", false);
             m_leftDragInProgress = false;
+            m_leftDragExceededThreshold = false;
             update();
             event->accept();
+            return;
         }
 
         if (event->button() == Qt::MiddleButton) {
@@ -885,6 +907,27 @@ protected:
         }
 
         QOpenGLWidget::mouseReleaseEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF world = screenToWorld(mouseEventPoint(event));
+            const qint64 worldX = static_cast<qint64>(world.x());
+            const qint64 worldY = static_cast<qint64>(world.y());
+
+            m_singleClickTimer.stop();
+            m_leftDragInProgress = false;
+            m_leftDragExceededThreshold = false;
+            emit commandRequested("canvas preview clear", false);
+            emit commandRequested(QString("canvas doubleclick %1 %2")
+                                      .arg(worldX)
+                                      .arg(worldY),
+                                true);
+            event->accept();
+            return;
+        }
+
+        QOpenGLWidget::mouseDoubleClickEvent(event);
     }
 
     void wheelEvent(QWheelEvent* event) override {
@@ -898,6 +941,13 @@ protected:
     }
 
 private:
+    void emitDeferredSingleClick() {
+        emit commandRequested(QString("canvas click %1 %2")
+                                  .arg(m_pendingClickX)
+                                  .arg(m_pendingClickY),
+                            true);
+    }
+
     // Converts world integer coordinates into screen-space doubles.
     QPointF worldToScreen(qint64 x, qint64 y) const {
         return QPointF((static_cast<double>(x) * m_zoom) + m_panX,
@@ -1229,10 +1279,14 @@ private:
     bool m_middlePanning{false};
 
     bool m_leftDragInProgress{false};
+    bool m_leftDragExceededThreshold{false};
     qint64 m_leftDragAnchorX{0};
     qint64 m_leftDragAnchorY{0};
     qint64 m_leftDragCurrentX{0};
     qint64 m_leftDragCurrentY{0};
+    qint64 m_pendingClickX{0};
+    qint64 m_pendingClickY{0};
+    QTimer m_singleClickTimer;
 
     QPointF m_lastPanPoint;
     double m_zoom{1.0};
