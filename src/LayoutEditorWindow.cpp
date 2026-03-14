@@ -873,6 +873,16 @@ protected:
 
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) {
+            if (m_suppressNextLeftReleaseClick) {
+                m_suppressNextLeftReleaseClick = false;
+                m_leftDragInProgress = false;
+                m_leftDragExceededThreshold = false;
+                emit commandRequested("canvas preview clear", false);
+                update();
+                event->accept();
+                return;
+            }
+
             const QPointF world = screenToWorld(mouseEventPoint(event));
             m_leftDragCurrentX = static_cast<qint64>(world.x());
             m_leftDragCurrentY = static_cast<qint64>(world.y());
@@ -916,6 +926,7 @@ protected:
             const qint64 worldY = static_cast<qint64>(world.y());
 
             m_singleClickTimer.stop();
+            m_suppressNextLeftReleaseClick = true;
             m_leftDragInProgress = false;
             m_leftDragExceededThreshold = false;
             emit commandRequested("canvas preview clear", false);
@@ -1280,6 +1291,7 @@ private:
 
     bool m_leftDragInProgress{false};
     bool m_leftDragExceededThreshold{false};
+    bool m_suppressNextLeftReleaseClick{false};
     qint64 m_leftDragAnchorX{0};
     qint64 m_leftDragAnchorY{0};
     qint64 m_leftDragCurrentX{0};
