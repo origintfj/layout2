@@ -114,11 +114,13 @@ dialog form ?-title <title>? <defaultsDict> <formSpec>
 ```
 
 - Builds and displays a modal form dialog from Tcl and returns a dict on **OK**.
+- Dialog is created as a top-level movable window (not parent-embedded), while still application-modal.
 - `defaultsDict` is the input Tcl dict of default values.
 - `formSpec` is a Tcl list of field dicts. Each field dict must include:
-  - `type`: `entry` or `checkbox`
+  - `type`: `entry`, `checkbox`, or `radio`
   - `key`: dict key to read/write
   - optional `label`: visible row label (defaults to `key`)
+- `radio` fields must provide `options` as a non-empty Tcl list. The selected option text is returned.
 - On **OK**, returns the same dictionary shape with updated values for all form fields.
 - On **Cancel**, the command errors with `dialog cancelled`.
 
@@ -129,7 +131,8 @@ set defaults [dict create width 10 height 20 snap 1]
 set formSpec [list \
     [dict create type entry key width label "Width"] \
     [dict create type entry key height label "Height"] \
-    [dict create type checkbox key snap label "Snap to grid"]]
+    [dict create type checkbox key snap label "Snap to grid"] \
+    [dict create type radio key mode label "Mode" options {outline filled}]]
 
 set values [dialog form -title "Rectangle" $defaults $formSpec]
 ```

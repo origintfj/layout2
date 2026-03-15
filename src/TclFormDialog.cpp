@@ -1,5 +1,6 @@
 #include "TclFormDialog.h"
 
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -7,7 +8,9 @@
 #include <QHash>
 #include <QLineEdit>
 #include <QObject>
+#include <QRadioButton>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include <tcl.h>
 
@@ -16,13 +19,15 @@ namespace {
 struct FieldBinding {
     enum class Kind {
         Entry,
-        Checkbox
+        Checkbox,
+        Radio
     };
 
     QString key;
     Kind kind{Kind::Entry};
     QLineEdit* lineEdit{nullptr};
     QCheckBox* checkBox{nullptr};
+    QButtonGroup* radioGroup{nullptr};
 };
 
 bool parseBooleanToken(const QString& value, bool& result) {
@@ -121,9 +126,74 @@ bool addFieldRow(Tcl_Interp* interp,
         return true;
     }
 
+    if (type == "radio") {
+        Tcl_Obj* optionsObj = nullptr;
+        if (Tcl_DictObjGet(interp, fieldObj, Tcl_NewStringObj("options", -1), &optionsObj) != TCL_OK) {
+            return false;
+        }
+
+        if (!optionsObj) {
+            Tcl_SetObjResult(interp,
+                             Tcl_NewStringObj(
+                                 QString("radio field '%1' must provide an options list").arg(key).toUtf8().constData(),
+                                 -1));
+            return false;
+        }
+
+        int optionCount = 0;
+        if (Tcl_ListObjLength(interp, optionsObj, &optionCount) != TCL_OK || optionCount <= 0) {
+            Tcl_SetObjResult(interp,
+                             Tcl_NewStringObj(
+                                 QString("radio field '%1' options must be a non-empty Tcl list").arg(key).toUtf8().constData(),
+                                 -1));
+            return false;
+        }
+
+        auto* optionsWidget = new QWidget();
+        auto* optionsLayout = new QVBoxLayout(optionsWidget);
+        optionsLayout->setContentsMargins(0, 0, 0, 0);
+        optionsLayout->setSpacing(4);
+
+        auto* radioGroup = new QButtonGroup(optionsWidget);
+        bool matchedDefault = false;
+        for (int i = 0; i < optionCount; ++i) {
+            Tcl_Obj* optionObj = nullptr;
+            if (Tcl_ListObjIndex(interp, optionsObj, i, &optionObj) != TCL_OK || !optionObj) {
+                Tcl_SetObjResult(interp,
+                                 Tcl_NewStringObj(
+                                     QString("failed reading radio option %1 for key '%2'").arg(i).arg(key).toUtf8().constData(),
+                                     -1));
+                return false;
+            }
+
+            const QString optionValue = QString::fromUtf8(Tcl_GetString(optionObj));
+            auto* radioButton = new QRadioButton(optionValue, optionsWidget);
+            radioGroup->addButton(radioButton);
+            optionsLayout->addWidget(radioButton);
+
+            if (defaultValue == optionValue) {
+                radioButton->setChecked(true);
+                matchedDefault = true;
+            }
+        }
+
+        if (!matchedDefault && !radioGroup->buttons().isEmpty()) {
+            radioGroup->buttons().first()->setChecked(true);
+        }
+
+        formLayout->addRow(label + ':', optionsWidget);
+
+        FieldBinding binding;
+        binding.key = key;
+        binding.kind = FieldBinding::Kind::Radio;
+        binding.radioGroup = radioGroup;
+        bindings.push_back(binding);
+        return true;
+    }
+
     Tcl_SetObjResult(interp,
                      Tcl_NewStringObj(
-                         QString("unsupported form field type '%1' (supported: entry, checkbox)").arg(type).toUtf8().constData(),
+                         QString("unsupported form field type '%1' (supported: entry, checkbox, radio)").arg(type).toUtf8().constData(),
                          -1));
     return false;
 }
@@ -133,6 +203,8 @@ bool addFieldRow(Tcl_Interp* interp,
 namespace TclFormDialog {
 
 int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent) {
+    Q_UNUSED(parent);
+
     if (objc < 2) {
         Tcl_SetResult(interp, const_cast<char*>("usage: dialog form ?-title <title>? <defaultsDict> <formSpec>"), TCL_STATIC);
         return TCL_ERROR;
@@ -171,7 +243,8 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
         return TCL_ERROR;
     }
 
-    QDialog dialog(parent);
+    QDialog dialog(nullptr, Qt::Window);
+    dialog.setWindowModality(Qt::ApplicationModal);
     dialog.setWindowTitle(title);
     auto* rootLayout = new QVBoxLayout(&dialog);
     auto* formLayout = new QFormLayout();
@@ -216,6 +289,8 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
             value = binding.lineEdit->text();
         } else if (binding.kind == FieldBinding::Kind::Checkbox && binding.checkBox) {
             value = binding.checkBox->isChecked() ? "1" : "0";
+        } else if (binding.kind == FieldBinding::Kind::Radio && binding.radioGroup && binding.radioGroup->checkedButton()) {
+            value = binding.radioGroup->checkedButton()->text();
         }
 
         Tcl_DictObjPut(interp,
