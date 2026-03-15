@@ -1,5 +1,6 @@
 #include "LayoutEditorWindow.h"
 #include "LayoutSceneModel.h"
+#include "SelectionPropertiesDialog.h"
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -721,6 +722,10 @@ public:
         update();
     }
 
+
+    void triggerPropertiesDialog() {
+        showPropertiesDialog();
+    }
 signals:
     void commandRequested(const QString& command, bool requestActivation);
     void objectDeletionRequested(quint64 objectId);
@@ -930,6 +935,10 @@ private:
     QPointF screenToWorld(const QPointF& p) const {
         return QPointF((p.x() - m_panX) / m_zoom,
                        (m_panY - p.y()) / m_zoom);
+    }
+
+    void showPropertiesDialog() {
+        SelectionPropertiesDialog::show(this, m_rootCell, m_selectedObjectIds);
     }
 
     QVector<PrimitiveRenderBackend::RenderItem> buildRenderItems(
@@ -1638,6 +1647,10 @@ void LayoutEditorWindow::onPrimitiveCommitted(const SceneRenderPrimitive& primit
 
     m_rootCell->addObject(object);
     m_canvas->setRootCell(m_rootCell.get());
+}
+
+void LayoutEditorWindow::onSelectionPropertiesRequested() {
+    m_canvas->triggerPropertiesDialog();
 }
 
 void LayoutEditorWindow::onObjectDeletionRequested(quint64 objectId) {

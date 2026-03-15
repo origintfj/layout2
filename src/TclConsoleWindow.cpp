@@ -429,7 +429,7 @@ int TclConsoleWindow::handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_
 
 int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
     if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: app <exit|layout_editor|editor ...>"), TCL_STATIC);
+        Tcl_SetResult(interp, const_cast<char*>("usage: app <exit|layout_editor|editor ...|properties>"), TCL_STATIC);
         return TCL_ERROR;
     }
 
@@ -498,6 +498,23 @@ int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* co
 
         setActiveEditor(editorId);
         Tcl_SetObjResult(interp, Tcl_NewIntObj(editorId));
+        return TCL_OK;
+    }
+
+    if (subCommand == "properties") {
+        if (objc != 2) {
+            Tcl_SetResult(interp, const_cast<char*>("usage: app properties"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        EditorSession* session = effectiveSession();
+        if (!session || !session->window) {
+            Tcl_SetResult(interp, const_cast<char*>("no active editor"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        session->window->onSelectionPropertiesRequested();
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
 
