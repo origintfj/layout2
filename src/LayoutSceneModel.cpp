@@ -153,7 +153,9 @@ void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
 
 void LayoutSceneNode::collectObjects(QVector<const LayoutObjectModel*>& outObjects) const {
     for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
-        outObjects.push_back(object.get());
+        if (object) {
+            outObjects.push_back(object.get());
+        }
     }
 
     for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
@@ -320,17 +322,14 @@ bool LayoutSceneNode::removeObjectById(quint64 objectId) {
 }
 
 bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
-    for (int i = 0; i < m_objects.size(); ++i) {
-        if (m_objects[i] && m_objects[i]->objectId() == objectId) {
+    const auto orderIt = m_objectOrderById.constFind(objectId);
+    if (orderIt != m_objectOrderById.cend()) {
+        const int objectIndex = orderIt.value();
+        if (objectIndex >= 0 && objectIndex < m_objects.size()) {
             deindexObject(objectId);
             m_objectById.remove(objectId);
             m_objectOrderById.remove(objectId);
-            m_objects.removeAt(i);
-            for (int j = i; j < m_objects.size(); ++j) {
-                if (m_objects[j]) {
-                    m_objectOrderById[m_objects[j]->objectId()] = j;
-                }
-            }
+            m_objects[objectIndex].reset();
             return true;
         }
     }
