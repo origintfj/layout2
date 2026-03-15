@@ -939,6 +939,28 @@ private:
                        (m_panY - p.y()) / m_zoom);
     }
 
+    void applyDialogSelectionToCanvas(const QSet<quint64>& dialogSelectedObjectIds,
+                                      const bool keepSelectedInPane) {
+        QSet<quint64> nextSelectedIds = m_selectedObjectIds;
+        if (keepSelectedInPane) {
+            nextSelectedIds.intersect(dialogSelectedObjectIds);
+        } else {
+            for (quint64 objectId : dialogSelectedObjectIds) {
+                nextSelectedIds.remove(objectId);
+            }
+        }
+
+        m_selectedObjectIds = nextSelectedIds;
+        if (!m_selectedObjectIds.contains(m_selectedObjectId)) {
+            m_selectedObjectId = m_selectedObjectIds.isEmpty() ? 0 : *m_selectedObjectIds.cbegin();
+        }
+
+        validateSelection();
+        m_dialogSelectedObjectIds = dialogSelectedObjectIds;
+        refreshPropertiesDialogIfOpen();
+        update();
+    }
+
     void refreshPropertiesDialogIfOpen() {
         SelectionPropertiesDialog::refreshIfOpen(this,
                                                  m_rootCell,
@@ -946,6 +968,10 @@ private:
                                                  [this](const QSet<quint64>& dialogSelectedObjectIds) {
                                                      m_dialogSelectedObjectIds = dialogSelectedObjectIds;
                                                      update();
+                                                 },
+                                                 [this](const QSet<quint64>& dialogSelectedObjectIds,
+                                                        const bool keepSelectedInPane) {
+                                                     applyDialogSelectionToCanvas(dialogSelectedObjectIds, keepSelectedInPane);
                                                  });
     }
 
@@ -956,6 +982,10 @@ private:
                                        [this](const QSet<quint64>& dialogSelectedObjectIds) {
                                            m_dialogSelectedObjectIds = dialogSelectedObjectIds;
                                            update();
+                                       },
+                                       [this](const QSet<quint64>& dialogSelectedObjectIds,
+                                              const bool keepSelectedInPane) {
+                                           applyDialogSelectionToCanvas(dialogSelectedObjectIds, keepSelectedInPane);
                                        });
     }
 
