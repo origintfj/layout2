@@ -84,6 +84,7 @@ public:
                                        qint64 minY,
                                        qint64 maxX,
                                        qint64 maxY,
+                                       const std::function<bool(const LayoutObjectModel&)>& predicate,
                                        QVector<SceneRenderPrimitive>& outPrimitives) const;
     void collectObjects(QVector<const LayoutObjectModel*>& outObjects) const;
     QVector<quint64> matchingObjectIdsAt(qint64 x,

@@ -1183,7 +1183,16 @@ private:
             qint64 maxX = 0;
             qint64 maxY = 0;
             visibleWorldBounds(minX, minY, maxX, maxY);
-            m_rootCell->collectRenderPrimitivesInRect(minX, minY, maxX, maxY, primitives);
+            m_rootCell->collectRenderPrimitivesInRect(
+                minX,
+                minY,
+                maxX,
+                maxY,
+                [this](const LayoutObjectModel& object) {
+                    const DrawnRectangle* rectangle = object.asRectangle();
+                    return rectangle && isSelectableRectangle(*rectangle);
+                },
+                primitives);
         }
 
         if (m_editPreviewEnabled) {

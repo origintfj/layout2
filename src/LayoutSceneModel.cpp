@@ -124,6 +124,7 @@ void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
                                                     const qint64 minY,
                                                     const qint64 maxX,
                                                     const qint64 maxY,
+                                                    const std::function<bool(const LayoutObjectModel&)>& predicate,
                                                     QVector<SceneRenderPrimitive>& outPrimitives) const {
     QSet<quint64> candidateObjectIds;
     collectCandidateObjectIdsInRect(minX, minY, maxX, maxY, candidateObjectIds);
@@ -155,11 +156,16 @@ void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
             continue;
         }
 
-        objectIt.value()->appendRenderPrimitives(outPrimitives);
+        const std::shared_ptr<LayoutObjectModel>& object = objectIt.value();
+        if (predicate && !predicate(*object)) {
+            continue;
+        }
+
+        object->appendRenderPrimitives(outPrimitives);
     }
 
     for (const std::shared_ptr<LayoutSceneNode>& child : m_children) {
-        child->collectRenderPrimitivesInRect(minX, minY, maxX, maxY, outPrimitives);
+        child->collectRenderPrimitivesInRect(minX, minY, maxX, maxY, predicate, outPrimitives);
     }
 }
 
