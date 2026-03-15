@@ -157,11 +157,11 @@ QWidget* makeGenericPropertiesPane(const SelectedObjectDescriptor& descriptor, Q
 void SelectionPropertiesDialog::show(QWidget* parent,
                                      const LayoutSceneNode* rootCell,
                                      const QSet<quint64>& selectedObjectIds) {
-    // Keep this as a top-level window but parent it to the invoking editor so
-    // ownership/lifetime stay tied to that specific session context.
+    // Keep this as a top-level window tied to the invoking editor session
+    // without making it modal, so users can move it independently.
     QDialog dialog(parent);
     dialog.setWindowFlag(Qt::Window, true);
-    dialog.setWindowModality(Qt::WindowModal);
+    dialog.setWindowModality(Qt::NonModal);
     dialog.setWindowTitle("Selection Properties");
     dialog.resize(880, 540);
 
