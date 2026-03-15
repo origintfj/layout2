@@ -5,10 +5,15 @@
 #include <utility>
 
 namespace {
+// Object IDs are monotonically increasing for the lifetime of the process.
+// Deleted IDs are not reused; new objects always get a new ID value.
 std::atomic<quint64> g_nextObjectId{1};
 }
 
 LayoutObjectModel::LayoutObjectModel()
+    // fetch_add returns the previous value, so IDs start at 1 and increase by 1.
+    // We intentionally use relaxed ordering because we only need uniqueness,
+    // not synchronization between threads for associated object state.
     : m_objectId(g_nextObjectId.fetch_add(1, std::memory_order_relaxed)) {}
 
 quint64 LayoutObjectModel::objectId() const {
@@ -75,6 +80,13 @@ void LayoutSceneNode::addObject(std::shared_ptr<LayoutObjectModel> object) {
         return;
     }
 
+    // Keep all indexing structures in sync with the storage vector:
+    // 1) objectId -> object pointer lookup
+    // 2) spatial tile index + bounds index
+    // 3) objectId -> stable vector slot index
+    //
+    // Deleted objects may leave tombstones (nullptr slots) in m_objects; we do
+    // not currently fill those holes on insertion. New objects append at tail.
     m_objectById.insert(object->objectId(), object);
     indexObject(object);
     m_objectOrderById.insert(object->objectId(), m_objects.size());
@@ -153,6 +165,8 @@ void LayoutSceneNode::collectRenderPrimitivesInRect(const qint64 minX,
 
 void LayoutSceneNode::collectObjects(QVector<const LayoutObjectModel*>& outObjects) const {
     for (const std::shared_ptr<LayoutObjectModel>& object : m_objects) {
+        // Deletions can leave tombstoned slots (nullptr) in m_objects.
+        // Explicitly skip them so callers only observe live objects.
         if (object) {
             outObjects.push_back(object.get());
         }
@@ -318,17 +332,30 @@ const LayoutObjectModel* LayoutSceneNode::findObjectById(quint64 objectId) const
 }
 
 bool LayoutSceneNode::removeObjectById(quint64 objectId) {
+    // Public entrypoint used by editor/controller code.
     return removeObjectByIdRecursive(objectId);
 }
 
 bool LayoutSceneNode::removeObjectByIdRecursive(quint64 objectId) {
+    // Fast path: resolve objectId directly to a vector slot without scanning.
     const auto orderIt = m_objectOrderById.constFind(objectId);
     if (orderIt != m_objectOrderById.cend()) {
         const int objectIndex = orderIt.value();
         if (objectIndex >= 0 && objectIndex < m_objects.size()) {
+            // Remove from every auxiliary index first so the object disappears
+            // from spatial queries and id-based lookup immediately.
             deindexObject(objectId);
             m_objectById.remove(objectId);
             m_objectOrderById.remove(objectId);
+
+            // Tombstone strategy:
+            // - clear the pointer in-place instead of removeAt(index)
+            // - avoids shifting trailing elements and rewriting all tail indexes
+            // - greatly reduces repeated middle-delete cost in large selections
+            //
+            // Current behavior: tombstones persist for process lifetime unless a
+            // future compaction pass is introduced. We do not reuse this slot
+            // directly and we do not reuse deleted object IDs.
             m_objects[objectIndex].reset();
             return true;
         }
@@ -408,6 +435,8 @@ void LayoutSceneNode::indexObject(const std::shared_ptr<LayoutObjectModel>& obje
 }
 
 void LayoutSceneNode::deindexObject(const quint64 objectId) {
+    // Remove reverse tile references first so we can visit only the tiles known
+    // to contain this object (instead of scanning the entire spatial map).
     const auto tileKeysIt = m_objectTileKeys.constFind(objectId);
     if (tileKeysIt != m_objectTileKeys.cend()) {
         for (quint64 key : tileKeysIt.value()) {
@@ -417,6 +446,7 @@ void LayoutSceneNode::deindexObject(const quint64 objectId) {
             }
 
             QVector<quint64>& ids = idsIt.value();
+            // A tile can contain many objects; remove this one id from the list.
             ids.removeAll(objectId);
             if (ids.isEmpty()) {
                 m_tileObjectIds.erase(idsIt);
@@ -426,6 +456,7 @@ void LayoutSceneNode::deindexObject(const quint64 objectId) {
         m_objectTileKeys.erase(tileKeysIt);
     }
 
+    // Also remove bounds cache so stale objects are never candidate matches.
     m_objectBoundsById.remove(objectId);
 }
 
