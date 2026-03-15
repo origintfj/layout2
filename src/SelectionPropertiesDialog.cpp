@@ -157,7 +157,8 @@ QWidget* makeGenericPropertiesPane(const SelectedObjectDescriptor& descriptor, Q
 void SelectionPropertiesDialog::show(QWidget* parent,
                                      const LayoutSceneNode* rootCell,
                                      const QSet<quint64>& selectedObjectIds) {
-    QDialog dialog(parent ? parent->window() : nullptr);
+    Q_UNUSED(parent);
+    QDialog dialog(nullptr);
     dialog.setWindowFlag(Qt::Window, true);
     dialog.setWindowTitle("Selection Properties");
     dialog.resize(880, 540);
