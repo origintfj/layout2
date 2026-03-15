@@ -157,16 +157,22 @@ QWidget* makeGenericPropertiesPane(const SelectedObjectDescriptor& descriptor, Q
 void SelectionPropertiesDialog::show(QWidget* parent,
                                      const LayoutSceneNode* rootCell,
                                      const QSet<quint64>& selectedObjectIds) {
-    // Keep this as a top-level window tied to the invoking editor session
-    // without making it modal, so users can move it independently.
-    QDialog dialog(parent);
-    dialog.setWindowFlag(Qt::Window, true);
-    dialog.setWindowModality(Qt::NonModal);
-    dialog.setWindowTitle("Selection Properties");
-    dialog.resize(880, 540);
+    // Use an independent top-level window (no QWidget parent relationship)
+    // so it can be moved freely, while still tying lifetime to the invoking
+    // editor session by closing when that editor is destroyed.
+    auto* dialog = new QDialog(nullptr);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowFlag(Qt::Window, true);
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->setWindowTitle("Selection Properties");
+    dialog->resize(880, 540);
 
-    auto* rootLayout = new QVBoxLayout(&dialog);
-    auto* splitter = new QSplitter(Qt::Horizontal, &dialog);
+    if (parent) {
+        QObject::connect(parent, &QObject::destroyed, dialog, &QDialog::close);
+    }
+
+    auto* rootLayout = new QVBoxLayout(dialog);
+    auto* splitter = new QSplitter(Qt::Horizontal, dialog);
     auto* tree = new QTreeWidget(splitter);
     tree->setHeaderLabel("Selected objects");
     tree->setRootIsDecorated(true);
@@ -213,7 +219,7 @@ void SelectionPropertiesDialog::show(QWidget* parent,
     }
 
     QObject::connect(tree, &QTreeWidget::currentItemChanged,
-                     &dialog,
+                     dialog,
                      [propertiesStack, paneByItem](QTreeWidgetItem* current, QTreeWidgetItem*) {
                          const auto it = paneByItem.constFind(current);
                          if (it != paneByItem.cend()) {
@@ -227,9 +233,11 @@ void SelectionPropertiesDialog::show(QWidget* parent,
 
     rootLayout->addWidget(splitter);
 
-    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    QObject::connect(buttonBox, &QDialogButtonBox::rejected, dialog, &QDialog::close);
     rootLayout->addWidget(buttonBox);
 
-    dialog.exec();
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
