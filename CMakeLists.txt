@@ -38,6 +38,8 @@ set(LAYOUT2_SOURCES
     src/LayoutGeometry.h
     src/EditorSessionController.cpp
     src/EditorSessionController.h
+    src/TclFormDialog.cpp
+    src/TclFormDialog.h
 )
 
 add_executable(layout2 ${LAYOUT2_SOURCES})

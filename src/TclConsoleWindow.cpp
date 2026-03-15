@@ -1,6 +1,7 @@
 #include "TclConsoleWindow.h"
 
 #include "LayoutSceneModel.h"
+#include "TclFormDialog.h"
 
 #include <QCoreApplication>
 #include <QAction>
@@ -49,6 +50,7 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     Tcl_CreateObjCommand(m_interp, "bindkey", &TclConsoleWindow::BindKeyCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "transcript", &TclConsoleWindow::TranscriptCommandBridge, this, nullptr);
     Tcl_CreateObjCommand(m_interp, "app", &TclConsoleWindow::AppCommandBridge, this, nullptr);
+    Tcl_CreateObjCommand(m_interp, "dialog", &TclConsoleWindow::DialogCommandBridge, this, nullptr);
 
     auto* fileMenu = menuBar()->addMenu("File");
     auto* exitAction = fileMenu->addAction("Exit");
@@ -339,6 +341,10 @@ int TclConsoleWindow::AppCommandBridge(ClientData clientData, Tcl_Interp* interp
     return static_cast<TclConsoleWindow*>(clientData)->handleAppCommand(interp, objc, objv);
 }
 
+int TclConsoleWindow::DialogCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return static_cast<TclConsoleWindow*>(clientData)->handleDialogCommand(interp, objc, objv);
+}
+
 bool TclConsoleWindow::parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName) {
     Tcl_WideInt raw = 0;
     if (Tcl_GetWideIntFromObj(interp, obj, &raw) != TCL_OK) {
@@ -425,6 +431,10 @@ int TclConsoleWindow::handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_
 
     Tcl_SetResult(interp, const_cast<char*>("unknown transcript filter subcommand"), TCL_STATIC);
     return TCL_ERROR;
+}
+
+int TclConsoleWindow::handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
+    return TclFormDialog::handleDialogCommand(interp, objc, objv, this);
 }
 
 int TclConsoleWindow::handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]) {
