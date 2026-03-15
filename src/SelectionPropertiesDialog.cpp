@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QHash>
 #include <QLabel>
+#include <QPointer>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QTreeWidget>
@@ -154,21 +155,28 @@ QWidget* makeGenericPropertiesPane(const SelectedObjectDescriptor& descriptor, Q
 }
 } // namespace
 
-void SelectionPropertiesDialog::show(QWidget* parent,
-                                     const LayoutSceneNode* rootCell,
-                                     const QSet<quint64>& selectedObjectIds) {
-    // Use an independent top-level window (no QWidget parent relationship)
-    // so it can be moved freely, while still tying lifetime to the invoking
-    // editor session by closing when that editor is destroyed.
-    auto* dialog = new QDialog(nullptr);
-    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    dialog->setWindowFlag(Qt::Window, true);
-    dialog->setWindowModality(Qt::NonModal);
-    dialog->setWindowTitle("Selection Properties");
-    dialog->resize(880, 540);
+namespace {
+QHash<QWidget*, QPointer<QDialog>>& dialogByParent() {
+    static QHash<QWidget*, QPointer<QDialog>> dialogs;
+    return dialogs;
+}
 
-    if (parent) {
-        QObject::connect(parent, &QObject::destroyed, dialog, &QDialog::close);
+void populateDialogContent(QDialog* dialog,
+                           const LayoutSceneNode* rootCell,
+                           const QSet<quint64>& selectedObjectIds) {
+    if (!dialog) {
+        return;
+    }
+
+    if (QLayout* existingLayout = dialog->layout()) {
+        QLayoutItem* item = nullptr;
+        while ((item = existingLayout->takeAt(0)) != nullptr) {
+            if (QWidget* childWidget = item->widget()) {
+                delete childWidget;
+            }
+            delete item;
+        }
+        delete existingLayout;
     }
 
     auto* rootLayout = new QVBoxLayout(dialog);
@@ -236,8 +244,53 @@ void SelectionPropertiesDialog::show(QWidget* parent,
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
     QObject::connect(buttonBox, &QDialogButtonBox::rejected, dialog, &QDialog::close);
     rootLayout->addWidget(buttonBox);
+}
 
+QDialog* ensureDialogForParent(QWidget* parent) {
+    auto& dialogs = dialogByParent();
+    QPointer<QDialog>& existing = dialogs[parent];
+    if (existing) {
+        return existing;
+    }
+
+    // Independent top-level window so it can be moved freely.
+    auto* dialog = new QDialog(nullptr);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowFlag(Qt::Window, true);
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->setWindowTitle("Selection Properties");
+    dialog->resize(880, 540);
+
+    if (parent) {
+        QObject::connect(parent, &QObject::destroyed, dialog, &QDialog::close);
+    }
+
+    QObject::connect(dialog, &QObject::destroyed, [parent]() {
+        dialogByParent().remove(parent);
+    });
+
+    existing = dialog;
+    return dialog;
+}
+} // namespace
+
+void SelectionPropertiesDialog::show(QWidget* parent,
+                                     const LayoutSceneNode* rootCell,
+                                     const QSet<quint64>& selectedObjectIds) {
+    QDialog* dialog = ensureDialogForParent(parent);
+    populateDialogContent(dialog, rootCell, selectedObjectIds);
     dialog->show();
     dialog->raise();
     dialog->activateWindow();
+}
+
+void SelectionPropertiesDialog::refreshIfOpen(QWidget* parent,
+                                              const LayoutSceneNode* rootCell,
+                                              const QSet<quint64>& selectedObjectIds) {
+    const auto it = dialogByParent().constFind(parent);
+    if (it == dialogByParent().cend() || !it.value()) {
+        return;
+    }
+
+    populateDialogContent(it.value(), rootCell, selectedObjectIds);
 }

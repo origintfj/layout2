@@ -11,4 +11,8 @@ void show(QWidget* parent,
           const LayoutSceneNode* rootCell,
           const QSet<quint64>& selectedObjectIds);
 
+void refreshIfOpen(QWidget* parent,
+                   const LayoutSceneNode* rootCell,
+                   const QSet<quint64>& selectedObjectIds);
+
 }

@@ -784,6 +784,7 @@ protected:
             }
             m_selectedObjectIds.clear();
             m_selectedObjectId = 0;
+            refreshPropertiesDialogIfOpen();
             update();
             event->accept();
             return;
@@ -935,6 +936,10 @@ private:
     QPointF screenToWorld(const QPointF& p) const {
         return QPointF((p.x() - m_panX) / m_zoom,
                        (m_panY - p.y()) / m_zoom);
+    }
+
+    void refreshPropertiesDialogIfOpen() {
+        SelectionPropertiesDialog::refreshIfOpen(this, m_rootCell, m_selectedObjectIds);
     }
 
     void showPropertiesDialog() {
@@ -1162,6 +1167,7 @@ private:
             m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
             m_hasSelectionPoint = false;
+            refreshPropertiesDialogIfOpen();
             update();
             return;
         }
@@ -1186,6 +1192,7 @@ private:
         m_lastSelectionCandidateIds.clear();
         m_lastSelectionPoint = QPointF();
         m_hasSelectionPoint = false;
+        refreshPropertiesDialogIfOpen();
         update();
     }
 
@@ -1199,6 +1206,7 @@ private:
             m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
             m_hasSelectionPoint = false;
+            refreshPropertiesDialogIfOpen();
             update();
             return;
         }
@@ -1227,10 +1235,14 @@ private:
         m_lastSelectionCandidateIds = candidates;
         m_lastSelectionPoint = selectionPoint;
         m_hasSelectionPoint = true;
+        refreshPropertiesDialogIfOpen();
         update();
     }
 
     void validateSelection() {
+        const QSet<quint64> previousSelectedIds = m_selectedObjectIds;
+        const quint64 previousSelectedObjectId = m_selectedObjectId;
+
         QSet<quint64> validSelectedIds;
         for (quint64 objectId : m_selectedObjectIds) {
             if (isSelectableObjectId(objectId)) {
@@ -1241,6 +1253,10 @@ private:
         m_selectedObjectIds = validSelectedIds;
         if (!m_selectedObjectIds.contains(m_selectedObjectId)) {
             m_selectedObjectId = m_selectedObjectIds.isEmpty() ? 0 : *m_selectedObjectIds.cbegin();
+        }
+
+        if (m_selectedObjectIds != previousSelectedIds || m_selectedObjectId != previousSelectedObjectId) {
+            refreshPropertiesDialogIfOpen();
         }
     }
 
