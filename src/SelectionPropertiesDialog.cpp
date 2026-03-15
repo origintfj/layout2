@@ -1,15 +1,19 @@
 #include "SelectionPropertiesDialog.h"
 
+#include <QAbstractItemView>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
 #include <QLabel>
+#include <QPointer>
+#include <QPushButton>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <utility>
 
 namespace {
 struct SelectedObjectDescriptor {
@@ -152,26 +156,93 @@ QWidget* makeGenericPropertiesPane(const SelectedObjectDescriptor& descriptor, Q
     }
     return panel;
 }
-} // namespace
 
-void SelectionPropertiesDialog::show(QWidget* parent,
-                                     const LayoutSceneNode* rootCell,
-                                     const QSet<quint64>& selectedObjectIds) {
-    Q_UNUSED(parent);
-    QDialog dialog(nullptr);
-    dialog.setWindowFlag(Qt::Window, true);
-    dialog.setWindowTitle("Selection Properties");
-    dialog.resize(880, 540);
+struct DialogState {
+    QPointer<QDialog> dialog;
+    SelectionPropertiesDialog::DialogSelectionChangedCallback onSelectionChanged;
+    SelectionPropertiesDialog::DialogSelectionApplyCallback onApplySelection;
+    QSet<quint64> selectedDialogObjectIds;
+};
 
-    auto* rootLayout = new QVBoxLayout(&dialog);
-    auto* splitter = new QSplitter(Qt::Horizontal, &dialog);
-    auto* tree = new QTreeWidget(splitter);
+QHash<QWidget*, DialogState>& dialogStatesByParent() {
+    static QHash<QWidget*, DialogState> states;
+    return states;
+}
+
+QSet<quint64> selectedObjectIdsFromTree(QTreeWidget* tree,
+                                        const QHash<QTreeWidgetItem*, QSet<quint64>>& objectIdsByItem) {
+    QSet<quint64> selectedIds;
+    if (!tree) {
+        return selectedIds;
+    }
+
+    const QList<QTreeWidgetItem*> selectedItems = tree->selectedItems();
+    for (QTreeWidgetItem* item : selectedItems) {
+        const auto it = objectIdsByItem.constFind(item);
+        if (it == objectIdsByItem.cend()) {
+            continue;
+        }
+
+        selectedIds.unite(it.value());
+    }
+
+    return selectedIds;
+}
+
+void publishDialogSelection(QWidget* parent,
+                            QTreeWidget* tree,
+                            const QHash<QTreeWidgetItem*, QSet<quint64>>& objectIdsByItem) {
+    auto it = dialogStatesByParent().find(parent);
+    if (it == dialogStatesByParent().end()) {
+        return;
+    }
+
+    it->selectedDialogObjectIds = selectedObjectIdsFromTree(tree, objectIdsByItem);
+    if (it->onSelectionChanged) {
+        it->onSelectionChanged(it->selectedDialogObjectIds);
+    }
+}
+
+void populateDialogContent(QWidget* parent,
+                           QDialog* dialog,
+                           const LayoutSceneNode* rootCell,
+                           const QSet<quint64>& selectedObjectIds) {
+    if (!dialog) {
+        return;
+    }
+
+    if (QLayout* existingLayout = dialog->layout()) {
+        QLayoutItem* item = nullptr;
+        while ((item = existingLayout->takeAt(0)) != nullptr) {
+            if (QWidget* childWidget = item->widget()) {
+                delete childWidget;
+            }
+            delete item;
+        }
+        delete existingLayout;
+    }
+
+    auto* rootLayout = new QVBoxLayout(dialog);
+    auto* splitter = new QSplitter(Qt::Horizontal, dialog);
+
+    auto* listPane = new QWidget(splitter);
+    auto* listPaneLayout = new QVBoxLayout(listPane);
+    listPaneLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto* tree = new QTreeWidget(listPane);
     tree->setHeaderLabel("Selected objects");
     tree->setRootIsDecorated(true);
     tree->setAlternatingRowColors(true);
+    tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    listPaneLayout->addWidget(tree);
+
+    auto* keepSelectionButton = new QPushButton("Deselect objects not selected in pane", listPane);
+    auto* deselectSelectionButton = new QPushButton("Deselect objects selected in pane", listPane);
+    listPaneLayout->addWidget(keepSelectionButton);
+    listPaneLayout->addWidget(deselectSelectionButton);
 
     auto* propertiesStack = new QStackedWidget(splitter);
-    splitter->addWidget(tree);
+    splitter->addWidget(listPane);
     splitter->addWidget(propertiesStack);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
@@ -186,7 +257,13 @@ void SelectionPropertiesDialog::show(QWidget* parent,
         byType[descriptor.typeName].push_back(descriptor);
     }
 
+    const auto stateIt = dialogStatesByParent().constFind(parent);
+    const QSet<quint64> previouslySelectedInDialog = stateIt == dialogStatesByParent().cend()
+                                                         ? QSet<quint64>{}
+                                                         : stateIt->selectedDialogObjectIds;
+
     QHash<QTreeWidgetItem*, int> paneByItem;
+    QHash<QTreeWidgetItem*, QSet<quint64>> objectIdsByItem;
     QStringList groupTypes = byType.keys();
     std::sort(groupTypes.begin(), groupTypes.end());
     for (const QString& typeName : groupTypes) {
@@ -195,11 +272,20 @@ void SelectionPropertiesDialog::show(QWidget* parent,
         groupItem->setExpanded(true);
         paneByItem[groupItem] = propertiesStack->addWidget(makeGroupPropertiesPane(typeName, typeDescriptors, propertiesStack));
 
+        QSet<quint64> groupObjectIds;
         for (const SelectedObjectDescriptor& descriptor : typeDescriptors) {
             auto* objectItem = new QTreeWidgetItem(groupItem,
                                                    QStringList() << QString("%1 #%2")
                                                                         .arg(typeName)
                                                                         .arg(descriptor.objectId));
+
+            groupObjectIds.insert(descriptor.objectId);
+            objectIdsByItem[objectItem].insert(descriptor.objectId);
+
+            if (previouslySelectedInDialog.contains(descriptor.objectId)) {
+                objectItem->setSelected(true);
+            }
+
             if (descriptor.rectangle) {
                 paneByItem[objectItem] = propertiesStack->addWidget(
                     makeRectanglePropertiesPane(descriptor, propertiesStack));
@@ -208,14 +294,42 @@ void SelectionPropertiesDialog::show(QWidget* parent,
                     makeGenericPropertiesPane(descriptor, propertiesStack));
             }
         }
+
+        objectIdsByItem[groupItem] = groupObjectIds;
     }
 
     QObject::connect(tree, &QTreeWidget::currentItemChanged,
-                     &dialog,
+                     dialog,
                      [propertiesStack, paneByItem](QTreeWidgetItem* current, QTreeWidgetItem*) {
                          const auto it = paneByItem.constFind(current);
                          if (it != paneByItem.cend()) {
                              propertiesStack->setCurrentIndex(it.value());
+                         }
+                     });
+
+    QObject::connect(tree, &QTreeWidget::itemSelectionChanged,
+                     dialog,
+                     [parent, tree, objectIdsByItem]() {
+                         publishDialogSelection(parent, tree, objectIdsByItem);
+                     });
+
+    QObject::connect(keepSelectionButton, &QPushButton::clicked,
+                     dialog,
+                     [parent, tree, objectIdsByItem]() {
+                         publishDialogSelection(parent, tree, objectIdsByItem);
+                         const auto it = dialogStatesByParent().constFind(parent);
+                         if (it != dialogStatesByParent().cend() && it->onApplySelection) {
+                             it->onApplySelection(it->selectedDialogObjectIds, true);
+                         }
+                     });
+
+    QObject::connect(deselectSelectionButton, &QPushButton::clicked,
+                     dialog,
+                     [parent, tree, objectIdsByItem]() {
+                         publishDialogSelection(parent, tree, objectIdsByItem);
+                         const auto it = dialogStatesByParent().constFind(parent);
+                         if (it != dialogStatesByParent().cend() && it->onApplySelection) {
+                             it->onApplySelection(it->selectedDialogObjectIds, false);
                          }
                      });
 
@@ -225,9 +339,78 @@ void SelectionPropertiesDialog::show(QWidget* parent,
 
     rootLayout->addWidget(splitter);
 
-    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    QObject::connect(buttonBox, &QDialogButtonBox::rejected, dialog, &QDialog::close);
     rootLayout->addWidget(buttonBox);
 
-    dialog.exec();
+    publishDialogSelection(parent, tree, objectIdsByItem);
+}
+
+QDialog* ensureDialogForParent(QWidget* parent) {
+    auto& states = dialogStatesByParent();
+    DialogState& state = states[parent];
+    if (state.dialog) {
+        return state.dialog;
+    }
+
+    // Independent top-level window so it can be moved freely.
+    auto* dialog = new QDialog(nullptr);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowFlag(Qt::Window, true);
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->setWindowTitle("Selection Properties");
+    dialog->resize(880, 540);
+
+    if (parent) {
+        QObject::connect(parent, &QObject::destroyed, dialog, &QDialog::close);
+    }
+
+    QObject::connect(dialog, &QObject::destroyed, [parent]() {
+        auto it = dialogStatesByParent().find(parent);
+        if (it == dialogStatesByParent().end()) {
+            return;
+        }
+
+        if (it->onSelectionChanged) {
+            it->onSelectionChanged(QSet<quint64>{});
+        }
+
+        dialogStatesByParent().remove(parent);
+    });
+
+    state.dialog = dialog;
+    return dialog;
+}
+} // namespace
+
+void SelectionPropertiesDialog::show(QWidget* parent,
+                                     const LayoutSceneNode* rootCell,
+                                     const QSet<quint64>& selectedObjectIds,
+                                     DialogSelectionChangedCallback onSelectionChanged,
+                                     DialogSelectionApplyCallback onApplySelection) {
+    QDialog* dialog = ensureDialogForParent(parent);
+
+    DialogState& state = dialogStatesByParent()[parent];
+    state.onSelectionChanged = std::move(onSelectionChanged);
+    state.onApplySelection = std::move(onApplySelection);
+
+    populateDialogContent(parent, dialog, rootCell, selectedObjectIds);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+void SelectionPropertiesDialog::refreshIfOpen(QWidget* parent,
+                                              const LayoutSceneNode* rootCell,
+                                              const QSet<quint64>& selectedObjectIds,
+                                              DialogSelectionChangedCallback onSelectionChanged,
+                                              DialogSelectionApplyCallback onApplySelection) {
+    auto it = dialogStatesByParent().find(parent);
+    if (it == dialogStatesByParent().end() || !it->dialog) {
+        return;
+    }
+
+    it->onSelectionChanged = std::move(onSelectionChanged);
+    it->onApplySelection = std::move(onApplySelection);
+    populateDialogContent(parent, it->dialog, rootCell, selectedObjectIds);
 }

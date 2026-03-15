@@ -770,6 +770,7 @@ protected:
             }
         }
 
+        drawDialogSelectionOutlines(painter);
         drawLeftDragPreview(painter);
         m_renderBackend->endFrame(painter, size());
 
@@ -784,6 +785,7 @@ protected:
             }
             m_selectedObjectIds.clear();
             m_selectedObjectId = 0;
+            refreshPropertiesDialogIfOpen();
             update();
             event->accept();
             return;
@@ -937,8 +939,54 @@ private:
                        (m_panY - p.y()) / m_zoom);
     }
 
+    void applyDialogSelectionToCanvas(const QSet<quint64>& dialogSelectedObjectIds,
+                                      const bool keepSelectedInPane) {
+        QSet<quint64> nextSelectedIds = m_selectedObjectIds;
+        if (keepSelectedInPane) {
+            nextSelectedIds.intersect(dialogSelectedObjectIds);
+        } else {
+            for (quint64 objectId : dialogSelectedObjectIds) {
+                nextSelectedIds.remove(objectId);
+            }
+        }
+
+        m_selectedObjectIds = nextSelectedIds;
+        if (!m_selectedObjectIds.contains(m_selectedObjectId)) {
+            m_selectedObjectId = m_selectedObjectIds.isEmpty() ? 0 : *m_selectedObjectIds.cbegin();
+        }
+
+        validateSelection();
+        m_dialogSelectedObjectIds = dialogSelectedObjectIds;
+        refreshPropertiesDialogIfOpen();
+        update();
+    }
+
+    void refreshPropertiesDialogIfOpen() {
+        SelectionPropertiesDialog::refreshIfOpen(this,
+                                                 m_rootCell,
+                                                 m_selectedObjectIds,
+                                                 [this](const QSet<quint64>& dialogSelectedObjectIds) {
+                                                     m_dialogSelectedObjectIds = dialogSelectedObjectIds;
+                                                     update();
+                                                 },
+                                                 [this](const QSet<quint64>& dialogSelectedObjectIds,
+                                                        const bool keepSelectedInPane) {
+                                                     applyDialogSelectionToCanvas(dialogSelectedObjectIds, keepSelectedInPane);
+                                                 });
+    }
+
     void showPropertiesDialog() {
-        SelectionPropertiesDialog::show(this, m_rootCell, m_selectedObjectIds);
+        SelectionPropertiesDialog::show(this,
+                                       m_rootCell,
+                                       m_selectedObjectIds,
+                                       [this](const QSet<quint64>& dialogSelectedObjectIds) {
+                                           m_dialogSelectedObjectIds = dialogSelectedObjectIds;
+                                           update();
+                                       },
+                                       [this](const QSet<quint64>& dialogSelectedObjectIds,
+                                              const bool keepSelectedInPane) {
+                                           applyDialogSelectionToCanvas(dialogSelectedObjectIds, keepSelectedInPane);
+                                       });
     }
 
     QVector<PrimitiveRenderBackend::RenderItem> buildRenderItems(
@@ -1038,6 +1086,28 @@ private:
             const QPointF p1 = worldToScreen(segment.x1, segment.y1);
             const QPointF p2 = worldToScreen(segment.x2, segment.y2);
             painter.drawLine(p1, p2);
+        }
+    }
+
+    void drawDialogSelectionOutlines(QPainter& painter) {
+        if (!m_rootCell || m_dialogSelectedObjectIds.isEmpty()) {
+            return;
+        }
+
+        painter.setPen(QPen(QColor("#ff00ff"), 2, Qt::SolidLine));
+        painter.setBrush(Qt::NoBrush);
+
+        for (quint64 objectId : m_dialogSelectedObjectIds) {
+            QVector<WorldLineSegment> outlineSegments;
+            if (!m_rootCell->collectOutlineSegmentsByObjectId(objectId, outlineSegments)) {
+                continue;
+            }
+
+            for (const WorldLineSegment& segment : outlineSegments) {
+                const QPointF p1 = worldToScreen(segment.x1, segment.y1);
+                const QPointF p2 = worldToScreen(segment.x2, segment.y2);
+                painter.drawLine(p1, p2);
+            }
         }
     }
 
@@ -1162,6 +1232,7 @@ private:
             m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
             m_hasSelectionPoint = false;
+            refreshPropertiesDialogIfOpen();
             update();
             return;
         }
@@ -1186,6 +1257,7 @@ private:
         m_lastSelectionCandidateIds.clear();
         m_lastSelectionPoint = QPointF();
         m_hasSelectionPoint = false;
+        refreshPropertiesDialogIfOpen();
         update();
     }
 
@@ -1199,6 +1271,7 @@ private:
             m_lastSelectionCandidateIds.clear();
             m_lastSelectionPoint = QPointF();
             m_hasSelectionPoint = false;
+            refreshPropertiesDialogIfOpen();
             update();
             return;
         }
@@ -1227,10 +1300,14 @@ private:
         m_lastSelectionCandidateIds = candidates;
         m_lastSelectionPoint = selectionPoint;
         m_hasSelectionPoint = true;
+        refreshPropertiesDialogIfOpen();
         update();
     }
 
     void validateSelection() {
+        const QSet<quint64> previousSelectedIds = m_selectedObjectIds;
+        const quint64 previousSelectedObjectId = m_selectedObjectId;
+
         QSet<quint64> validSelectedIds;
         for (quint64 objectId : m_selectedObjectIds) {
             if (isSelectableObjectId(objectId)) {
@@ -1241,6 +1318,10 @@ private:
         m_selectedObjectIds = validSelectedIds;
         if (!m_selectedObjectIds.contains(m_selectedObjectId)) {
             m_selectedObjectId = m_selectedObjectIds.isEmpty() ? 0 : *m_selectedObjectIds.cbegin();
+        }
+
+        if (m_selectedObjectIds != previousSelectedIds || m_selectedObjectId != previousSelectedObjectId) {
+            refreshPropertiesDialogIfOpen();
         }
     }
 
@@ -1306,6 +1387,7 @@ private:
 
     quint64 m_selectedObjectId{0};
     QSet<quint64> m_selectedObjectIds;
+    QSet<quint64> m_dialogSelectedObjectIds;
     quint64 m_hoveredObjectId{0};
     QVector<quint64> m_lastSelectionCandidateIds;
     QPointF m_lastSelectionPoint;
