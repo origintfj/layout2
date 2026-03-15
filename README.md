@@ -121,16 +121,20 @@ dialog form ?-title <title>? <defaultsDict> <formSpec>
   - `key`: dict key to read/write
   - optional `label`: visible row label (defaults to `key`)
 - `radio` fields must provide `options` as a non-empty Tcl list. The selected option text is returned.
+- `entry` fields can optionally add numeric constraints:
+  - `value_type`: `text` (default), `int`, or `float`
+  - optional `min` and/or `max` (only when `value_type` is `int` or `float`)
 - On **OK**, returns the same dictionary shape with updated values for all form fields.
 - On **Cancel**, the command errors with `dialog cancelled`.
 
 Example:
 
 ```tcl
-set defaults [dict create width 10 height 20 snap 1]
+set defaults [dict create width 10 height 20 ratio 0.5 snap 1 mode filled]
 set formSpec [list \
-    [dict create type entry key width label "Width"] \
-    [dict create type entry key height label "Height"] \
+    [dict create type entry key width label "Width" value_type int min 1 max 5000] \
+    [dict create type entry key height label "Height" value_type int min 1 max 5000] \
+    [dict create type entry key ratio label "Fill ratio" value_type float min 0.0 max 1.0] \
     [dict create type checkbox key snap label "Snap to grid"] \
     [dict create type radio key mode label "Mode" options {outline filled}]]
 

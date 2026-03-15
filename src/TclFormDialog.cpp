@@ -4,17 +4,28 @@
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleValidator>
 #include <QFormLayout>
 #include <QHash>
+#include <QIntValidator>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QObject>
 #include <QRadioButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <limits>
+
 #include <tcl.h>
 
 namespace {
+
+enum class EntryValueType {
+    Text,
+    Integer,
+    Float
+};
 
 struct FieldBinding {
     enum class Kind {
@@ -25,8 +36,21 @@ struct FieldBinding {
 
     QString key;
     Kind kind{Kind::Entry};
+
+    // Entry binding state
     QLineEdit* lineEdit{nullptr};
+    EntryValueType entryValueType{EntryValueType::Text};
+    bool hasMin{false};
+    bool hasMax{false};
+    qint64 minInt{0};
+    qint64 maxInt{0};
+    double minFloat{0.0};
+    double maxFloat{0.0};
+
+    // Checkbox binding state
     QCheckBox* checkBox{nullptr};
+
+    // Radio binding state
     QButtonGroup* radioGroup{nullptr};
 };
 
@@ -61,6 +85,159 @@ bool readStringDict(Tcl_Interp* interp, Tcl_Obj* dictObj, QHash<QString, QString
     }
 
     Tcl_DictObjDone(&search);
+    return true;
+}
+
+bool parseOptionalEntryConstraints(Tcl_Interp* interp,
+                                   Tcl_Obj* fieldObj,
+                                   const QString& key,
+                                   FieldBinding& binding,
+                                   QString& errorMessage) {
+    Tcl_Obj* valueTypeObj = nullptr;
+    Tcl_Obj* minObj = nullptr;
+    Tcl_Obj* maxObj = nullptr;
+
+    if (Tcl_DictObjGet(interp, fieldObj, Tcl_NewStringObj("value_type", -1), &valueTypeObj) != TCL_OK
+        || Tcl_DictObjGet(interp, fieldObj, Tcl_NewStringObj("min", -1), &minObj) != TCL_OK
+        || Tcl_DictObjGet(interp, fieldObj, Tcl_NewStringObj("max", -1), &maxObj) != TCL_OK) {
+        return false;
+    }
+
+    QString valueType = "text";
+    if (valueTypeObj) {
+        valueType = QString::fromUtf8(Tcl_GetString(valueTypeObj)).trimmed().toLower();
+    }
+
+    if (valueType == "text" || valueType.isEmpty()) {
+        binding.entryValueType = EntryValueType::Text;
+        if (minObj || maxObj) {
+            errorMessage = QString("entry field '%1': min/max can only be used when value_type is int or float").arg(key);
+            return false;
+        }
+        return true;
+    }
+
+    if (valueType == "int" || valueType == "integer") {
+        binding.entryValueType = EntryValueType::Integer;
+
+        if (minObj) {
+            Tcl_WideInt rawMin = 0;
+            if (Tcl_GetWideIntFromObj(interp, minObj, &rawMin) != TCL_OK) {
+                errorMessage = QString("entry field '%1': min must be an integer").arg(key);
+                return false;
+            }
+            binding.hasMin = true;
+            binding.minInt = static_cast<qint64>(rawMin);
+        }
+
+        if (maxObj) {
+            Tcl_WideInt rawMax = 0;
+            if (Tcl_GetWideIntFromObj(interp, maxObj, &rawMax) != TCL_OK) {
+                errorMessage = QString("entry field '%1': max must be an integer").arg(key);
+                return false;
+            }
+            binding.hasMax = true;
+            binding.maxInt = static_cast<qint64>(rawMax);
+        }
+
+        if (binding.hasMin && binding.hasMax && binding.minInt > binding.maxInt) {
+            errorMessage = QString("entry field '%1': min must be <= max").arg(key);
+            return false;
+        }
+
+        return true;
+    }
+
+    if (valueType == "float" || valueType == "double") {
+        binding.entryValueType = EntryValueType::Float;
+
+        if (minObj) {
+            double parsedMin = 0.0;
+            if (Tcl_GetDoubleFromObj(interp, minObj, &parsedMin) != TCL_OK) {
+                errorMessage = QString("entry field '%1': min must be a float").arg(key);
+                return false;
+            }
+            binding.hasMin = true;
+            binding.minFloat = parsedMin;
+        }
+
+        if (maxObj) {
+            double parsedMax = 0.0;
+            if (Tcl_GetDoubleFromObj(interp, maxObj, &parsedMax) != TCL_OK) {
+                errorMessage = QString("entry field '%1': max must be a float").arg(key);
+                return false;
+            }
+            binding.hasMax = true;
+            binding.maxFloat = parsedMax;
+        }
+
+        if (binding.hasMin && binding.hasMax && binding.minFloat > binding.maxFloat) {
+            errorMessage = QString("entry field '%1': min must be <= max").arg(key);
+            return false;
+        }
+
+        return true;
+    }
+
+    errorMessage = QString("entry field '%1': unsupported value_type '%2' (supported: text, int, float)")
+                       .arg(key)
+                       .arg(valueType);
+    return false;
+}
+
+bool validateEntryBinding(const FieldBinding& binding, QString& errorMessage) {
+    if (!binding.lineEdit) {
+        return true;
+    }
+
+    const QString raw = binding.lineEdit->text().trimmed();
+
+    if (binding.entryValueType == EntryValueType::Text) {
+        return true;
+    }
+
+    if (binding.entryValueType == EntryValueType::Integer) {
+        bool ok = false;
+        const qint64 value = raw.toLongLong(&ok);
+        if (!ok) {
+            errorMessage = QString("Field '%1' must be an integer").arg(binding.key);
+            return false;
+        }
+
+        if (binding.hasMin && value < binding.minInt) {
+            errorMessage = QString("Field '%1' must be >= %2").arg(binding.key).arg(binding.minInt);
+            return false;
+        }
+
+        if (binding.hasMax && value > binding.maxInt) {
+            errorMessage = QString("Field '%1' must be <= %2").arg(binding.key).arg(binding.maxInt);
+            return false;
+        }
+
+        return true;
+    }
+
+    if (binding.entryValueType == EntryValueType::Float) {
+        bool ok = false;
+        const double value = raw.toDouble(&ok);
+        if (!ok) {
+            errorMessage = QString("Field '%1' must be a float").arg(binding.key);
+            return false;
+        }
+
+        if (binding.hasMin && value < binding.minFloat) {
+            errorMessage = QString("Field '%1' must be >= %2").arg(binding.key).arg(binding.minFloat);
+            return false;
+        }
+
+        if (binding.hasMax && value > binding.maxFloat) {
+            errorMessage = QString("Field '%1' must be <= %2").arg(binding.key).arg(binding.maxFloat);
+            return false;
+        }
+
+        return true;
+    }
+
     return true;
 }
 
@@ -100,6 +277,43 @@ bool addFieldRow(Tcl_Interp* interp,
         binding.key = key;
         binding.kind = FieldBinding::Kind::Entry;
         binding.lineEdit = lineEdit;
+
+        QString constraintError;
+        if (!parseOptionalEntryConstraints(interp, fieldObj, key, binding, constraintError)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(constraintError.toUtf8().constData(), -1));
+            return false;
+        }
+
+        if (binding.entryValueType == EntryValueType::Integer) {
+            int validatorMin = std::numeric_limits<int>::min();
+            int validatorMax = std::numeric_limits<int>::max();
+            if (binding.hasMin) {
+                validatorMin = static_cast<int>(std::max<qint64>(binding.minInt, std::numeric_limits<int>::min()));
+            }
+            if (binding.hasMax) {
+                validatorMax = static_cast<int>(std::min<qint64>(binding.maxInt, std::numeric_limits<int>::max()));
+            }
+
+            auto* validator = new QIntValidator(validatorMin, validatorMax, lineEdit);
+            lineEdit->setValidator(validator);
+        } else if (binding.entryValueType == EntryValueType::Float) {
+            double validatorMin = binding.hasMin ? binding.minFloat : -std::numeric_limits<double>::max();
+            double validatorMax = binding.hasMax ? binding.maxFloat : std::numeric_limits<double>::max();
+
+            auto* validator = new QDoubleValidator(validatorMin, validatorMax, 12, lineEdit);
+            validator->setNotation(QDoubleValidator::StandardNotation);
+            lineEdit->setValidator(validator);
+        }
+
+        QString defaultValidationError;
+        if (!validateEntryBinding(binding, defaultValidationError)) {
+            Tcl_SetObjResult(interp,
+                             Tcl_NewStringObj(
+                                 QString("entry field '%1' default is invalid: %2").arg(key).arg(defaultValidationError).toUtf8().constData(),
+                                 -1));
+            return false;
+        }
+
         bindings.push_back(binding);
         return true;
     }
@@ -161,7 +375,11 @@ bool addFieldRow(Tcl_Interp* interp,
             if (Tcl_ListObjIndex(interp, optionsObj, i, &optionObj) != TCL_OK || !optionObj) {
                 Tcl_SetObjResult(interp,
                                  Tcl_NewStringObj(
-                                     QString("failed reading radio option %1 for key '%2'").arg(i).arg(key).toUtf8().constData(),
+                                     QString("failed reading radio option %1 for key '%2'")
+                                         .arg(i)
+                                         .arg(key)
+                                         .toUtf8()
+                                         .constData(),
                                      -1));
                 return false;
             }
@@ -267,7 +485,21 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     rootLayout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, &bindings]() {
+        for (const FieldBinding& binding : bindings) {
+            if (binding.kind != FieldBinding::Kind::Entry) {
+                continue;
+            }
+
+            QString validationError;
+            if (!validateEntryBinding(binding, validationError)) {
+                QMessageBox::warning(&dialog, "Invalid field value", validationError);
+                return;
+            }
+        }
+
+        dialog.accept();
+    });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() != QDialog::Accepted) {
