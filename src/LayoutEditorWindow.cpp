@@ -1088,7 +1088,8 @@ private:
     }
 
     void showPropertiesDialog() {
-        QDialog dialog(this);
+        QDialog dialog(nullptr);
+        dialog.setWindowFlag(Qt::Window, true);
         dialog.setWindowTitle("Selection Properties");
         dialog.resize(880, 540);
 
