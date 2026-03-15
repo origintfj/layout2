@@ -3,7 +3,7 @@
 # This initializes the palette by loading the example layers definition.
 # Users can customize startup behavior by editing this file or using
 # scripts/init.example.tcl as a template.
-layer load sky130_layers.txt
+layer load ihp_sg13g2_layers.txt
 source scripts/bindkeys.tcl
 source scripts/transcript_filters.tcl
 # NOTE: Tcl `source` returns the result of the last command in the file.

@@ -53,7 +53,7 @@ else()
 endif()
 
 # Copy runtime data/scripts into build directory for startup loading.
-configure_file(data/example_layers.txt ${CMAKE_CURRENT_BINARY_DIR}/example_layers.txt COPYONLY)
-configure_file(scripts/init.tcl ${CMAKE_CURRENT_BINARY_DIR}/init.tcl COPYONLY)
+configure_file(data/ihp_sg13g2_layers.txt ${CMAKE_CURRENT_BINARY_DIR}/ihp_sg13g2_layers.txt COPYONLY)
+configure_file(scripts/init.tcl ${CMAKE_CURRENT_BINARY_DIR}/../init.tcl COPYONLY)
 configure_file(scripts/bindkeys.tcl ${CMAKE_CURRENT_BINARY_DIR}/bindkeys.tcl COPYONLY)
 configure_file(scripts/transcript_filters.tcl ${CMAKE_CURRENT_BINARY_DIR}/transcript_filters.tcl COPYONLY)
