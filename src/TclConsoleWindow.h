@@ -45,6 +45,7 @@ private:
     static int BindKeyCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     static int TranscriptCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     static int AppCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    static int DialogCommandBridge(ClientData clientData, Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
 
     // Per-command-family handlers.
     int handleLayerCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
@@ -54,6 +55,7 @@ private:
     int handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleTranscriptCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
     int handleAppCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
+    int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[]);
 
     // Common argument parsing helpers.
     bool parseInt64(Tcl_Interp* interp, Tcl_Obj* obj, qint64& value, const char* fieldName);

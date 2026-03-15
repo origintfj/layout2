@@ -107,6 +107,33 @@ transcript filter clear
 - `remove` returns the number of removed exact matches.
 - `list` returns a Tcl list of active patterns.
 
+### `dialog` command family
+
+```tcl
+dialog form ?-title <title>? <defaultsDict> <formSpec>
+```
+
+- Builds and displays a modal form dialog from Tcl and returns a dict on **OK**.
+- `defaultsDict` is the input Tcl dict of default values.
+- `formSpec` is a Tcl list of field dicts. Each field dict must include:
+  - `type`: `entry` or `checkbox`
+  - `key`: dict key to read/write
+  - optional `label`: visible row label (defaults to `key`)
+- On **OK**, returns the same dictionary shape with updated values for all form fields.
+- On **Cancel**, the command errors with `dialog cancelled`.
+
+Example:
+
+```tcl
+set defaults [dict create width 10 height 20 snap 1]
+set formSpec [list \
+    [dict create type entry key width label "Width"] \
+    [dict create type entry key height label "Height"] \
+    [dict create type checkbox key snap label "Snap to grid"]]
+
+set values [dialog form -title "Rectangle" $defaults $formSpec]
+```
+
 ### `app` command family
 
 ```tcl
