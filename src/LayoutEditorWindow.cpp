@@ -779,10 +779,18 @@ protected:
     void keyPressEvent(QKeyEvent* event) override {
         if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
             && !m_selectedObjectIds.isEmpty()) {
+            // Snapshot the current selection IDs before emitting any deletion
+            // signals. Deletion mutates scene/model state and may indirectly
+            // affect selection internals; iterating a stable copy is safer.
             const QVector<quint64> selectedIds = m_selectedObjectIds.values().toVector();
             for (quint64 objectId : selectedIds) {
+                // Emit one request per selected object. The receiver performs
+                // model-level deletion and index cleanup for that object ID.
                 emit objectDeletionRequested(objectId);
             }
+
+            // Locally clear selection bookkeeping after issuing requests so UI
+            // no longer references deleted objects.
             m_selectedObjectIds.clear();
             m_selectedObjectId = 0;
             refreshPropertiesDialogIfOpen();
@@ -1736,14 +1744,18 @@ void LayoutEditorWindow::onSelectionPropertiesRequested() {
 }
 
 void LayoutEditorWindow::onObjectDeletionRequested(quint64 objectId) {
+    // Object IDs are strictly positive; 0 is reserved as "no object".
     if (objectId == 0) {
         return;
     }
 
+    // removeObjectById handles recursive search, spatial deindexing, id map
+    // updates, and tombstoning of the storage slot when found.
     if (!m_rootCell->removeObjectById(objectId)) {
         return;
     }
 
+    // Rebind scene root so canvas repaints from updated model state.
     m_canvas->setRootCell(m_rootCell.get());
 }
 
