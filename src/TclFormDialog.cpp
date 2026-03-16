@@ -1,5 +1,6 @@
 #include "TclFormDialog.h"
 
+#include <QAbstractButton>
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QDialog>
@@ -416,95 +417,18 @@ bool addFieldRow(Tcl_Interp* interp,
     return false;
 }
 
-} // namespace
-
-namespace TclFormDialog {
-
-int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent) {
-    Q_UNUSED(parent);
-
-    if (objc < 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: dialog form ?-title <title>? <defaultsDict> <formSpec>"), TCL_STATIC);
-        return TCL_ERROR;
-    }
-
-    const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
-    if (subCommand != "form") {
-        Tcl_SetResult(interp, const_cast<char*>("unknown dialog subcommand"), TCL_STATIC);
-        return TCL_ERROR;
-    }
-
-    QString title = "Form";
-    int defaultsIndex = 2;
-    if (objc >= 4 && QString::fromUtf8(Tcl_GetString(objv[2])) == "-title") {
-        title = QString::fromUtf8(Tcl_GetString(objv[3]));
-        defaultsIndex = 4;
-    }
-
-    if (objc != defaultsIndex + 2) {
-        Tcl_SetResult(interp, const_cast<char*>("usage: dialog form ?-title <title>? <defaultsDict> <formSpec>"), TCL_STATIC);
-        return TCL_ERROR;
-    }
-
-    Tcl_Obj* defaultsObj = objv[defaultsIndex];
-    Tcl_Obj* formSpecObj = objv[defaultsIndex + 1];
-
-    QHash<QString, QString> defaults;
-    if (!readStringDict(interp, defaultsObj, defaults)) {
-        Tcl_SetResult(interp, const_cast<char*>("defaultsDict must be a valid Tcl dict"), TCL_STATIC);
-        return TCL_ERROR;
-    }
-
-    int fieldCount = 0;
-    if (Tcl_ListObjLength(interp, formSpecObj, &fieldCount) != TCL_OK) {
-        Tcl_SetResult(interp, const_cast<char*>("formSpec must be a Tcl list of field dicts"), TCL_STATIC);
-        return TCL_ERROR;
-    }
-
-    QDialog dialog(nullptr, Qt::Window);
-    dialog.setWindowModality(Qt::ApplicationModal);
-    dialog.setWindowTitle(title);
-    auto* rootLayout = new QVBoxLayout(&dialog);
-    auto* formLayout = new QFormLayout();
-    rootLayout->addLayout(formLayout);
-
-    QVector<FieldBinding> bindings;
-    bindings.reserve(fieldCount);
-    for (int i = 0; i < fieldCount; ++i) {
-        Tcl_Obj* fieldObj = nullptr;
-        if (Tcl_ListObjIndex(interp, formSpecObj, i, &fieldObj) != TCL_OK || !fieldObj) {
-            Tcl_SetObjResult(interp,
-                             Tcl_NewStringObj(QString("failed reading form field at index %1").arg(i).toUtf8().constData(), -1));
-            return TCL_ERROR;
+Tcl_Obj* collectFormValues(Tcl_Interp* interp,
+                           const QHash<QString, QString>& defaults,
+                           const QVector<FieldBinding>& bindings,
+                           QString& errorMessage) {
+    for (const FieldBinding& binding : bindings) {
+        if (binding.kind != FieldBinding::Kind::Entry) {
+            continue;
         }
 
-        if (!addFieldRow(interp, fieldObj, defaults, formLayout, bindings)) {
-            return TCL_ERROR;
+        if (!validateEntryBinding(binding, errorMessage)) {
+            return nullptr;
         }
-    }
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    rootLayout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, &bindings]() {
-        for (const FieldBinding& binding : bindings) {
-            if (binding.kind != FieldBinding::Kind::Entry) {
-                continue;
-            }
-
-            QString validationError;
-            if (!validateEntryBinding(binding, validationError)) {
-                QMessageBox::warning(&dialog, "Invalid field value", validationError);
-                return;
-            }
-        }
-
-        dialog.accept();
-    });
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-
-    if (dialog.exec() != QDialog::Accepted) {
-        Tcl_SetResult(interp, const_cast<char*>("dialog cancelled"), TCL_STATIC);
-        return TCL_ERROR;
     }
 
     Tcl_Obj* result = Tcl_NewDictObj();
@@ -531,7 +455,256 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
                        Tcl_NewStringObj(value.toUtf8().constData(), -1));
     }
 
-    Tcl_SetObjResult(interp, result);
+    return result;
+}
+
+bool evaluateApplyCommand(Tcl_Interp* interp,
+                          Tcl_Obj* applyCommandObj,
+                          const QString& objectId,
+                          Tcl_Obj* valuesObj,
+                          QString& errorMessage) {
+    if (!applyCommandObj) {
+        return true;
+    }
+
+    int prefixCount = 0;
+    Tcl_Obj** prefixObjv = nullptr;
+    if (Tcl_ListObjGetElements(interp, applyCommandObj, &prefixCount, &prefixObjv) != TCL_OK || prefixCount <= 0) {
+        errorMessage = "-applycmd must be a non-empty Tcl command prefix list";
+        return false;
+    }
+
+    QVector<Tcl_Obj*> evalObjv;
+    evalObjv.reserve(prefixCount + (objectId.isEmpty() ? 1 : 2));
+    for (int i = 0; i < prefixCount; ++i) {
+        evalObjv.push_back(prefixObjv[i]);
+    }
+
+    Tcl_Obj* objectIdObj = nullptr;
+    if (!objectId.isEmpty()) {
+        objectIdObj = Tcl_NewStringObj(objectId.toUtf8().constData(), -1);
+        Tcl_IncrRefCount(objectIdObj);
+        evalObjv.push_back(objectIdObj);
+    }
+
+    Tcl_Obj* payloadObj = Tcl_DuplicateObj(valuesObj);
+    Tcl_IncrRefCount(payloadObj);
+    evalObjv.push_back(payloadObj);
+
+    const int evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
+    Tcl_DecrRefCount(payloadObj);
+    if (objectIdObj) {
+        Tcl_DecrRefCount(objectIdObj);
+    }
+
+    if (evalStatus != TCL_OK) {
+        errorMessage = QString::fromUtf8(Tcl_GetStringResult(interp));
+        return false;
+    }
+
+    return true;
+}
+
+} // namespace
+
+namespace TclFormDialog {
+
+int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent) {
+    Q_UNUSED(parent);
+
+    if (objc < 2) {
+        Tcl_SetResult(interp,
+                      const_cast<char*>("usage: dialog form ?-title <title>? ?-nonmodal <bool>? ?-objectid <id>? ?-applycmd <commandPrefix>? <defaultsDict> <formSpec>"),
+                      TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    const QString subCommand = QString::fromUtf8(Tcl_GetString(objv[1]));
+    if (subCommand != "form") {
+        Tcl_SetResult(interp, const_cast<char*>("unknown dialog subcommand"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    QString title = "Form";
+    bool nonModal = false;
+    QString objectId;
+    Tcl_Obj* applyCommandObj = nullptr;
+
+    int argIndex = 2;
+    while (argIndex + 1 < objc) {
+        const QString option = QString::fromUtf8(Tcl_GetString(objv[argIndex]));
+        if (option == "-title") {
+            title = QString::fromUtf8(Tcl_GetString(objv[argIndex + 1]));
+            argIndex += 2;
+            continue;
+        }
+
+        if (option == "-nonmodal") {
+            int boolValue = 0;
+            if (Tcl_GetBooleanFromObj(interp, objv[argIndex + 1], &boolValue) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            nonModal = boolValue != 0;
+            argIndex += 2;
+            continue;
+        }
+
+        if (option == "-objectid") {
+            objectId = QString::fromUtf8(Tcl_GetString(objv[argIndex + 1]));
+            argIndex += 2;
+            continue;
+        }
+
+        if (option == "-applycmd") {
+            applyCommandObj = objv[argIndex + 1];
+            argIndex += 2;
+            continue;
+        }
+
+        break;
+    }
+
+    if (objc != argIndex + 2) {
+        Tcl_SetResult(interp,
+                      const_cast<char*>("usage: dialog form ?-title <title>? ?-nonmodal <bool>? ?-objectid <id>? ?-applycmd <commandPrefix>? <defaultsDict> <formSpec>"),
+                      TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    Tcl_Obj* defaultsObj = objv[argIndex];
+    Tcl_Obj* formSpecObj = objv[argIndex + 1];
+
+    QHash<QString, QString> defaults;
+    if (!readStringDict(interp, defaultsObj, defaults)) {
+        Tcl_SetResult(interp, const_cast<char*>("defaultsDict must be a valid Tcl dict"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    int fieldCount = 0;
+    if (Tcl_ListObjLength(interp, formSpecObj, &fieldCount) != TCL_OK) {
+        Tcl_SetResult(interp, const_cast<char*>("formSpec must be a Tcl list of field dicts"), TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    auto* dialog = new QDialog(nullptr, Qt::Window);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowTitle(title);
+    dialog->setWindowModality(nonModal ? Qt::NonModal : Qt::ApplicationModal);
+    auto* rootLayout = new QVBoxLayout(dialog);
+    auto* formLayout = new QFormLayout();
+    rootLayout->addLayout(formLayout);
+
+    auto* bindings = new QVector<FieldBinding>();
+    bindings->reserve(fieldCount);
+    for (int i = 0; i < fieldCount; ++i) {
+        Tcl_Obj* fieldObj = nullptr;
+        if (Tcl_ListObjIndex(interp, formSpecObj, i, &fieldObj) != TCL_OK || !fieldObj) {
+            Tcl_SetObjResult(interp,
+                             Tcl_NewStringObj(QString("failed reading form field at index %1").arg(i).toUtf8().constData(), -1));
+            delete bindings;
+            delete dialog;
+            return TCL_ERROR;
+        }
+
+        if (!addFieldRow(interp, fieldObj, defaults, formLayout, *bindings)) {
+            delete bindings;
+            delete dialog;
+            return TCL_ERROR;
+        }
+    }
+
+    auto* buttons = nonModal
+                        ? new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, dialog)
+                        : new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+    rootLayout->addWidget(buttons);
+
+    if (!nonModal) {
+        QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, bindings]() {
+            for (const FieldBinding& binding : *bindings) {
+                if (binding.kind != FieldBinding::Kind::Entry) {
+                    continue;
+                }
+
+                QString validationError;
+                if (!validateEntryBinding(binding, validationError)) {
+                    QMessageBox::warning(dialog, "Invalid field value", validationError);
+                    return;
+                }
+            }
+
+            dialog->accept();
+        });
+        QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+
+        if (dialog->exec() != QDialog::Accepted) {
+            delete bindings;
+            delete dialog;
+            Tcl_SetResult(interp, const_cast<char*>("dialog cancelled"), TCL_STATIC);
+            return TCL_ERROR;
+        }
+
+        QString errorMessage;
+        Tcl_Obj* result = collectFormValues(interp, defaults, *bindings, errorMessage);
+        delete bindings;
+        delete dialog;
+        if (!result) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(errorMessage.toUtf8().constData(), -1));
+            return TCL_ERROR;
+        }
+
+        Tcl_SetObjResult(interp, result);
+        return TCL_OK;
+    }
+
+    if (applyCommandObj) {
+        Tcl_IncrRefCount(applyCommandObj);
+    }
+
+    QObject::connect(buttons, &QDialogButtonBox::clicked, dialog,
+                     [interp, dialog, buttons, bindings, defaults, objectId, applyCommandObj](QAbstractButton* button) {
+                         const QDialogButtonBox::ButtonRole role = buttons->buttonRole(button);
+
+                         if (role == QDialogButtonBox::RejectRole) {
+                             dialog->close();
+                             return;
+                         }
+
+                         if (role != QDialogButtonBox::ApplyRole && role != QDialogButtonBox::AcceptRole) {
+                             return;
+                         }
+
+                         QString validationError;
+                         Tcl_Obj* valuesObj = collectFormValues(interp, defaults, *bindings, validationError);
+                         if (!valuesObj) {
+                             QMessageBox::warning(dialog, "Invalid field value", validationError);
+                             return;
+                         }
+
+                         QString commandError;
+                         if (!evaluateApplyCommand(interp, applyCommandObj, objectId, valuesObj, commandError)) {
+                             QMessageBox::warning(dialog,
+                                                  "Tickle command failed",
+                                                  commandError.isEmpty() ? QStringLiteral("Failed to execute -applycmd") : commandError);
+                             return;
+                         }
+
+                         if (role == QDialogButtonBox::AcceptRole) {
+                             dialog->close();
+                         }
+                     });
+
+    QObject::connect(dialog, &QObject::destroyed, [bindings, applyCommandObj]() {
+        delete bindings;
+        if (applyCommandObj) {
+            Tcl_DecrRefCount(applyCommandObj);
+        }
+    });
+
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+
+    Tcl_SetObjResult(interp, Tcl_NewStringObj("dialog shown", -1));
     return TCL_OK;
 }
 

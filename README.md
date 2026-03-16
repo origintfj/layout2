@@ -110,11 +110,12 @@ transcript filter clear
 ### `dialog` command family
 
 ```tcl
-dialog form ?-title <title>? <defaultsDict> <formSpec>
+dialog form ?-title <title>? ?-nonmodal <bool>? ?-objectid <id>? ?-applycmd <commandPrefix>? <defaultsDict> <formSpec>
 ```
 
-- Builds and displays a modal form dialog from Tcl and returns a dict on **OK**.
-- Dialog is created as a top-level movable window (not parent-embedded), while still application-modal.
+- By default, this builds and displays a **modal** form dialog and returns a dict on **OK**.
+- Set `-nonmodal 1` to show the dialog modelessly so the Tcl console remains usable.
+- Dialog is created as a top-level movable window (not parent-embedded).
 - `defaultsDict` is the input Tcl dict of default values.
 - `formSpec` is a Tcl list of field dicts. Each field dict must include:
   - `type`: `entry`, `checkbox`, or `radio`
@@ -124,8 +125,12 @@ dialog form ?-title <title>? <defaultsDict> <formSpec>
 - `entry` fields can optionally add numeric constraints:
   - `value_type`: `text` (default), `int`, or `float`
   - optional `min` and/or `max` (only when `value_type` is `int` or `float`)
-- On **OK**, returns the same dictionary shape with updated values for all form fields.
-- On **Cancel**, the command errors with `dialog cancelled`.
+- In modal mode: **OK** returns the same dictionary shape with updated values for all fields, and **Cancel** errors with `dialog cancelled`.
+- In non-modal mode: the command returns immediately with `dialog shown`, and the dialog includes **OK / Apply / Cancel**.
+- In non-modal mode, `-applycmd` can be used to execute a Tcl command prefix on **Apply** and **OK**.
+  - Callback signature is `{{*}}<commandPrefix> ?<objectId>? <valuesDict>`.
+  - If `-objectid` is supplied, it is inserted before `<valuesDict>`.
+  - **Apply** runs the callback and keeps the window open; **OK** runs it and then closes.
 
 Example:
 
@@ -139,6 +144,22 @@ set formSpec [list \
     [dict create type radio key mode label "Mode" options {outline filled}]]
 
 set values [dialog form -title "Rectangle" $defaults $formSpec]
+```
+
+Non-modal callback example:
+
+```tcl
+proc apply_props {objectId values} {
+    puts "apply_props object=$objectId values=$values"
+    # example: object update $objectId $values
+}
+
+dialog form \
+    -title "Rectangle" \
+    -nonmodal 1 \
+    -objectid 42 \
+    -applycmd {apply_props} \
+    $defaults $formSpec
 ```
 
 ### `app` command family
