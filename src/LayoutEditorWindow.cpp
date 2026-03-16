@@ -63,6 +63,7 @@ QBrush patternBrushFor(QColor baseColor, const QString& pattern) {
         return QBrush(baseColor, Qt::SolidPattern);
     }
 
+    // Keep stipple texel-to-pixel mapping at 1:1 so each pattern bit maps to one screen pixel.
     const int patternMag = 1;
 
     QPixmap pixmap(8 * patternMag, 8 * patternMag);
@@ -576,8 +577,10 @@ private:
             uniform float uPatternRows[8];
             void main() {
                 if (uUseStipple > 0.5) {
+                    // Repeat the stipple every 8 pixels to match the native 8x8 pattern definition.
                     float x = mod(floor(gl_FragCoord.x), 8.0);
                     float y = mod(floor(gl_FragCoord.y), 8.0);
+                    // Convert wrapped fragment coordinates directly into bit indices (unit-scale lookup).
                     int bitX = int(x);
                     int bitY = int(y);
                     float row = uPatternRows[bitY];
