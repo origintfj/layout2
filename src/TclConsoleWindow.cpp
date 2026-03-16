@@ -815,8 +815,14 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        Q_UNUSED(x);
-        Q_UNUSED(y);
+        // Route click commands through editor selection handling when the
+        // select tool is active. This keeps command-driven and GUI-driven
+        // selection behavior consistent, and immediately enters the existing
+        // canvas hit-testing/candidate-cycle path.
+        if (session->activeTool == "select") {
+            session->window->onCanvasClickSelect(x, y);
+        }
+
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
@@ -838,6 +844,18 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
+        // For select-tool sessions, drag commands represent selection
+        // rectangles rather than geometry commits. Handle selection first (via
+        // canvas rectangle query / hit path) and return immediately to avoid
+        // drawing-tool commit logic below.
+        if (session->activeTool == "select") {
+            session->window->onCanvasDragSelect(anchorX, anchorY, releaseX, releaseY);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+            return TCL_OK;
+        }
+
+        // Non-select tools keep the previous behavior: convert drag gesture to
+        // a committed primitive on the active layer.
         auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
                                [session](const LayerDefinition& layer) {
                                    return layer.name.compare(session->activeLayerName, Qt::CaseInsensitive) == 0
