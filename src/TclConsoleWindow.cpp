@@ -817,9 +817,10 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
 
         // Route click commands through editor selection handling when the
         // select tool is active. This keeps command-driven and GUI-driven
-        // selection behavior consistent.
+        // selection behavior consistent, and immediately enters the existing
+        // canvas hit-testing/candidate-cycle path.
         if (session->activeTool == "select") {
-            session->window->onCanvasClick(x, y);
+            session->window->onCanvasClickSelect(x, y);
         }
 
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
@@ -844,10 +845,11 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
         }
 
         // For select-tool sessions, drag commands represent selection
-        // rectangles rather than geometry commits. Handle selection first and
-        // return immediately to avoid drawing-tool commit logic below.
+        // rectangles rather than geometry commits. Handle selection first (via
+        // canvas rectangle query / hit path) and return immediately to avoid
+        // drawing-tool commit logic below.
         if (session->activeTool == "select") {
-            session->window->onCanvasDrag(anchorX, anchorY, releaseX, releaseY);
+            session->window->onCanvasDragSelect(anchorX, anchorY, releaseX, releaseY);
             Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
             return TCL_OK;
         }

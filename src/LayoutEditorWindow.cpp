@@ -1683,24 +1683,16 @@ void LayoutEditorWindow::onMouseWorldPositionChanged(qint64 worldX, qint64 world
     refreshStatusLabel();
 }
 
-void LayoutEditorWindow::onCanvasClick(qint64 worldX, qint64 worldY) {
-    // Selection policy is only applied here for the select tool. For any other
-    // tool, canvas click semantics are handled elsewhere in the command layer.
-    if (m_activeTool != "select") {
-        return;
-    }
-
+void LayoutEditorWindow::onCanvasClickSelect(qint64 worldX, qint64 worldY) {
+    // Tool dispatch happens in Tcl `canvas click` handling. By the time we
+    // arrive here, click is known to represent select-tool behavior.
     // Delegate to canvas-local selection implementation (hit/cycle behavior).
     m_canvas->applySelectionClick(worldX, worldY);
 }
 
-void LayoutEditorWindow::onCanvasDrag(qint64 anchorX, qint64 anchorY, qint64 releaseX, qint64 releaseY) {
-    // Mirror click behavior for drag selections: only the select tool consumes
-    // drag gestures as selection rectangles.
-    if (m_activeTool != "select") {
-        return;
-    }
-
+void LayoutEditorWindow::onCanvasDragSelect(qint64 anchorX, qint64 anchorY, qint64 releaseX, qint64 releaseY) {
+    // Tool dispatch happens in Tcl `canvas drag` handling. By the time we
+    // arrive here, drag is known to represent select-tool behavior.
     // Delegate to canvas-local drag-selection implementation.
     m_canvas->applySelectionDrag(anchorX, anchorY, releaseX, releaseY);
 }
