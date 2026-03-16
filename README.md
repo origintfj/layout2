@@ -330,7 +330,7 @@ The OpenGL path is designed as a hybrid optimized pipeline:
 4. **Detailed stipple rendering in GL**
    - Detailed items are rendered through GL with stipple enabled in fragment shader.
    - Layer map stipple is passed as eight 8-bit row values (`uPatternRows[8]`).
-   - Shader computes screen-space stipple bits (2x magnification to match existing visual density) and discards fragments for clear bits.
+   - Shader computes screen-space stipple bits at unit scale and discards fragments for clear bits.
 
 5. **Optional telemetry**
    - With `LAYOUT2_RENDER_STATS=1`, backend emits periodic frame/primitive statistics for tuning.
