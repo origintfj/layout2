@@ -47,6 +47,7 @@ public slots:
     void onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive);
     void onPrimitiveCommitted(const SceneRenderPrimitive& primitive);
     void onCanvasClick(qint64 worldX, qint64 worldY);
+    void onCanvasDrag(qint64 anchorX, qint64 anchorY, qint64 releaseX, qint64 releaseY);
     void onLeftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
     void onSelectionPropertiesRequested();
 

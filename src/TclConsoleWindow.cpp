@@ -815,8 +815,10 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             return TCL_ERROR;
         }
 
-        Q_UNUSED(x);
-        Q_UNUSED(y);
+        if (session->activeTool == "select") {
+            session->window->onCanvasClick(x, y);
+        }
+
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
         return TCL_OK;
     }
@@ -836,6 +838,12 @@ int TclConsoleWindow::handleCanvasCommand(Tcl_Interp* interp, int objc, Tcl_Obj*
             || !parseInt64(interp, objv[4], releaseX, "releaseX")
             || !parseInt64(interp, objv[5], releaseY, "releaseY")) {
             return TCL_ERROR;
+        }
+
+        if (session->activeTool == "select") {
+            session->window->onCanvasDrag(anchorX, anchorY, releaseX, releaseY);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ok", -1));
+            return TCL_OK;
         }
 
         auto it = std::find_if(session->layers.cbegin(), session->layers.cend(),
