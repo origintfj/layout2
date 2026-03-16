@@ -46,7 +46,10 @@ public slots:
     // Edit preview updates received from Tcl execution side.
     void onEditPreviewChanged(bool enabled, const SceneRenderPrimitive& primitive);
     void onPrimitiveCommitted(const SceneRenderPrimitive& primitive);
+    // Invoked by Tcl command handling to apply select-tool click policy.
     void onCanvasClick(qint64 worldX, qint64 worldY);
+    // Invoked by Tcl command handling to apply select-tool drag policy.
+    void onCanvasDrag(qint64 anchorX, qint64 anchorY, qint64 releaseX, qint64 releaseY);
     void onLeftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
     void onSelectionPropertiesRequested();
 

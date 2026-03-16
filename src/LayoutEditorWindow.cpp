@@ -726,12 +726,31 @@ public:
     void triggerPropertiesDialog() {
         showPropertiesDialog();
     }
+
+    // Applies single-point selection logic using world-space coordinates.
+    //
+    // This method is intentionally tiny: it exposes the existing internal
+    // click-selection behavior so higher layers (editor/Tcl command dispatch)
+    // can invoke selection policy decisions without duplicating hit-testing
+    // and candidate-cycling logic.
+    void applySelectionClick(qint64 worldX, qint64 worldY) {
+        handleSelectionClick(worldX, worldY);
+    }
+
+    // Applies rectangle selection logic using world-space drag endpoints.
+    //
+    // Like applySelectionClick(), this exists to keep the detailed selection
+    // implementation local to LayoutCanvas while still allowing policy routing
+    // to happen through command handlers.
+    void applySelectionDrag(qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY) {
+        handleSelectionDrag(anchorX, anchorY, currentX, currentY);
+    }
+
 signals:
     void commandRequested(const QString& command, bool requestActivation);
     void objectDeletionRequested(quint64 objectId);
     void mouseWorldPositionChanged(qint64 worldX, qint64 worldY, bool insideCanvas);
     void leftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
-    void canvasClicked(qint64 worldX, qint64 worldY);
 
 protected:
     enum class RenderDetailLevel {
@@ -892,22 +911,24 @@ protected:
                                      || m_leftAnchorY != m_leftCurrentY;
                 m_leftDragActive = false;
                 emit leftDragPreviewChanged(false, m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
+                // Gesture interpretation (click vs drag) remains in the
+                // canvas event path, but the final policy decision is routed
+                // through the Tcl command flow so both GUI gestures and typed
+                // Tcl commands share one selection-policy entrypoint.
                 if (didDrag) {
-                    if (m_activeTool == "select") {
-                        handleSelectionDrag(m_leftAnchorX, m_leftAnchorY, m_leftCurrentX, m_leftCurrentY);
-                    } else {
-                        emit commandRequested(QString("canvas drag %1 %2 %3 %4")
-                                                  .arg(m_leftAnchorX)
-                                                  .arg(m_leftAnchorY)
-                                                  .arg(m_leftCurrentX)
-                                                  .arg(m_leftCurrentY),
-                                            true);
-                    }
+                    // Drag gestures always emit a canvas drag command. The Tcl
+                    // layer decides whether this means selection update (select
+                    // tool) or geometry commit (drawing tools).
+                    emit commandRequested(QString("canvas drag %1 %2 %3 %4")
+                                              .arg(m_leftAnchorX)
+                                              .arg(m_leftAnchorY)
+                                              .arg(m_leftCurrentX)
+                                              .arg(m_leftCurrentY),
+                                        true);
                 } else {
-                    if (m_activeTool == "select") {
-                        handleSelectionClick(worldX, worldY);
-                    }
-                    emit canvasClicked(worldX, worldY);
+                    // Click gestures emit a canvas click command, allowing the
+                    // same command path to drive selection updates for the
+                    // select tool.
                     emit commandRequested(QString("canvas click %1 %2")
                                               .arg(worldX)
                                               .arg(worldY),
@@ -1484,8 +1505,6 @@ LayoutEditorWindow::LayoutEditorWindow(QWidget* parent)
             this, &LayoutEditorWindow::onObjectDeletionRequested);
     connect(m_canvas, &LayoutCanvas::mouseWorldPositionChanged,
             this, &LayoutEditorWindow::onMouseWorldPositionChanged);
-    connect(m_canvas, &LayoutCanvas::canvasClicked,
-            this, &LayoutEditorWindow::onCanvasClick);
     connect(m_canvas, &LayoutCanvas::leftDragPreviewChanged,
             this, &LayoutEditorWindow::onLeftDragPreviewChanged);
 
@@ -1665,8 +1684,25 @@ void LayoutEditorWindow::onMouseWorldPositionChanged(qint64 worldX, qint64 world
 }
 
 void LayoutEditorWindow::onCanvasClick(qint64 worldX, qint64 worldY) {
-    Q_UNUSED(worldX);
-    Q_UNUSED(worldY);
+    // Selection policy is only applied here for the select tool. For any other
+    // tool, canvas click semantics are handled elsewhere in the command layer.
+    if (m_activeTool != "select") {
+        return;
+    }
+
+    // Delegate to canvas-local selection implementation (hit/cycle behavior).
+    m_canvas->applySelectionClick(worldX, worldY);
+}
+
+void LayoutEditorWindow::onCanvasDrag(qint64 anchorX, qint64 anchorY, qint64 releaseX, qint64 releaseY) {
+    // Mirror click behavior for drag selections: only the select tool consumes
+    // drag gestures as selection rectangles.
+    if (m_activeTool != "select") {
+        return;
+    }
+
+    // Delegate to canvas-local drag-selection implementation.
+    m_canvas->applySelectionDrag(anchorX, anchorY, releaseX, releaseY);
 }
 
 void LayoutEditorWindow::onLeftDragPreviewChanged(bool enabled,
