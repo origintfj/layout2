@@ -512,7 +512,10 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
 
     int evalStatus = TCL_OK;
     if (console) {
-        evalStatus = console->evaluateConsoleCommand(commandString, true, true, true);
+        // Explicit echo to guarantee visibility for dialog-triggered callbacks.
+        console->appendTranscriptLine(QString("> %1").arg(commandString));
+        // Reuse the shared evaluator for result/error handling.
+        evalStatus = console->evaluateConsoleCommand(commandString, false, true, true);
     } else {
         evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
     }
