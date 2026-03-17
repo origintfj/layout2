@@ -55,13 +55,13 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
     auto* fileMenu = menuBar()->addMenu("File");
     auto* exitAction = fileMenu->addAction("Exit");
     connect(exitAction, &QAction::triggered, this, [this]() {
-        executeCommand("app exit");
+        (void)executeGeneratedCommand("app exit");
     });
 
     auto* toolsMenu = menuBar()->addMenu("Tools");
     auto* layoutEditorAction = toolsMenu->addAction("Layout Editor");
     connect(layoutEditorAction, &QAction::triggered, this, [this]() {
-        executeCommand("app layout_editor");
+        (void)executeGeneratedCommand("app layout_editor");
     });
 
     // Manual command entry from console input line.
@@ -69,14 +69,14 @@ TclConsoleWindow::TclConsoleWindow(QWidget* parent)
         const QString command = m_input->text().trimmed();
         if (!command.isEmpty()) {
             pushHistoryCommand(command);
-            executeCommand(command);
+            executeUserCommand(command);
         }
         m_input->clear();
     });
 
     // Startup script bootstraps initial palette/tool config.
     appendTranscript("Interpreter ready. Loading init.tcl...");
-    executeCommand("source init.tcl");
+    (void)executeGeneratedCommand("source init.tcl");
 }
 
 TclConsoleWindow::~TclConsoleWindow() {
@@ -189,29 +189,47 @@ int TclConsoleWindow::evaluateCommand(const QString& command,
 }
 
 int TclConsoleWindow::evaluateCommandForEditor(const QString& command,
-                                               const bool echoCommand,
-                                               const bool echoResult,
-                                               const bool echoErrorLine,
                                                const int editorId,
                                                const bool requestActivation) {
     const int previousCommandEditorId = m_sessionController.commandEditorId();
-    m_sessionController.setCommandEditorId(editorId);
-    if (requestActivation && editorId > 0) {
+    const int previousActiveEditorId = m_sessionController.activeEditorId();
+    m_sessionController.setCommandEditorId(editorId); // all following commands will be executed on this editor
+    // if activation -> execute the activate command if the new editor is not the currently active one
+    if (requestActivation && editorId > 0 && editorId != previousActiveEditorId) {
         const QString activateCommand = QString("app editor active %1").arg(editorId);
-        (void)evaluateCommand(activateCommand, true, false, false);
+        (void)executeGeneratedCommand(activateCommand);
     }
-
-    const int rc = evaluateCommand(command, echoCommand, echoResult, echoErrorLine);
+    // execute the requested command and restore the command execution editor to the previous one
+    const int rc = executeGeneratedCommand(command);
     m_sessionController.setCommandEditorId(previousCommandEditorId);
     return rc;
 }
 
-void TclConsoleWindow::executeCommand(const QString& command) {
-    (void)evaluateCommand(command, true, true, true, false);
+void TclConsoleWindow::executeUserCommand(const QString& command) {
+    // everything is echoed but we ignore the transcript filters
+    (void)evaluateCommand(
+        command, // command to be executed
+        true,    // true -> echo command to console
+        true,    // true -> echo result
+        true,    // true -> echo error line
+        false    // true -> apply transcript filters
+    );
 }
 
+int TclConsoleWindow::executeGeneratedCommand(const QString& command) {
+    // everything is echoed AND the transcript filters are applied
+    return evaluateCommand(
+        command, // command to be executed
+        true,    // true -> echo command to console
+        true,    // true -> echo result
+        true,    // true -> echo error line
+        true     // true -> apply transcript filters
+    );
+}
+
+// the layout editor executes tcl commands via this function
 void TclConsoleWindow::executeEditorCommand(const int editorId, const QString& command, const bool requestActivation) {
-    (void)evaluateCommandForEditor(command, true, true, true, editorId, requestActivation);
+    (void)evaluateCommandForEditor(command, editorId, requestActivation);
 }
 
 EditorSession* TclConsoleWindow::sessionById(const int editorId) {
@@ -255,6 +273,7 @@ int TclConsoleWindow::createEditorSession(const bool activate) {
     initializeSessionLayers(*session);
     session->activeTool = m_defaultTool;
 
+    //connect the layout editor's command requested signal to the executeEditorCommand function
     connect(window, &LayoutEditorWindow::commandRequested,
             this, [this, editorId](const QString& command, const bool requestActivation) {
                 executeEditorCommand(editorId, command, requestActivation);
@@ -570,11 +589,12 @@ int TclConsoleWindow::handleBindKeyCommand(Tcl_Interp* interp, int objc, Tcl_Obj
             return TCL_OK;
         }
 
+        // TODO: look at this, why are we executing this twice???
         const QString command = m_keyBindings.value(keySpec);
         if (m_sessionController.commandEditorId() > 0) {
-            return evaluateCommandForEditor(command, true, false, false, m_sessionController.commandEditorId(), false);
+            return evaluateCommandForEditor(command, m_sessionController.commandEditorId(), false);
         }
-        return evaluateCommand(command, true, false, false);
+        return executeGeneratedCommand(command);
     }
 
     if (subCommand == "list") {

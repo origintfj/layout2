@@ -52,7 +52,7 @@ QPointF wheelEventPoint(const QWheelEvent* event) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     return event->position();
 #else
-    return QPointF(event->pos());
+    return QPointF(event->position());
 #endif
 }
 
@@ -1532,13 +1532,19 @@ void LayoutEditorWindow::setEditorIdentity(const int editorId, const bool isActi
 }
 
 bool LayoutEditorWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::MouseButtonPress) {
-        if (auto* widget = qobject_cast<QWidget*>(watched)) {
-            if (widget->window() == this) {
-                emit activationRequested();
-            }
-        }
-    }
+    // TODO: can we remove this? looks like it activates the editor via the back door
+    // ... rather than through the conventional command flow which should be triggered
+    // ... whenever it matteres anyway. e.g. mouse clicks which result in a tcl command
+    // ... already cause activation within the tcl module. are there any mouse events
+    // ... which need to result in activation without emiting a tcl command? cant think
+    // ... of any
+    //if (event->type() == QEvent::MouseButtonPress) {
+    //    if (auto* widget = qobject_cast<QWidget*>(watched)) {
+    //        if (widget->window() == this) {
+    //            emit activationRequested();
+    //        }
+    //    }
+    //}
 
     if (watched == m_layerTable && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);

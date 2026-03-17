@@ -30,10 +30,11 @@ public:
 
 public slots:
     // Evaluates a Tcl command and appends result/error text to transcript.
-    void executeCommand(const QString& command);
     void executeEditorCommand(int editorId, const QString& command, bool requestActivation);
 
 private:
+    void executeUserCommand(const QString& command);
+    int executeGeneratedCommand(const QString& command);
     void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -70,9 +71,6 @@ private:
                         bool echoErrorLine,
                         bool applyTranscriptFilters = true);
     int evaluateCommandForEditor(const QString& command,
-                                 bool echoCommand,
-                                 bool echoResult,
-                                 bool echoErrorLine,
                                  int editorId,
                                  bool requestActivation);
     void pushHistoryCommand(const QString& command);
