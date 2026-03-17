@@ -1,4 +1,5 @@
 #include "TclFormDialog.h"
+#include "TclConsoleWindow.h"
 
 #include <QAbstractButton>
 #include <QButtonGroup>
@@ -466,7 +467,9 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
                           Tcl_Obj* applyCommandObj,
                           const QString& objectId,
                           Tcl_Obj* valuesObj,
-                          QString& errorMessage) {
+                          QString& errorMessage,
+                          QString& executedCommand,
+                          QString& callbackResult) {
     // -applycmd is optional in non-modal mode.
     if (!applyCommandObj) {
         return true;
@@ -500,7 +503,15 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
     Tcl_IncrRefCount(payloadObj);
     evalObjv.push_back(payloadObj);
 
+    // Keep a readable command-string form so the console can echo callback execution.
+    Tcl_Obj* commandObj = Tcl_NewListObj(0, nullptr);
+    for (Tcl_Obj* argObj : evalObjv) {
+        Tcl_ListObjAppendElement(interp, commandObj, argObj);
+    }
+    executedCommand = QString::fromUtf8(Tcl_GetString(commandObj));
+
     const int evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
+    callbackResult = QString::fromUtf8(Tcl_GetStringResult(interp));
     Tcl_DecrRefCount(payloadObj);
     if (objectIdObj) {
         Tcl_DecrRefCount(objectIdObj);
@@ -519,8 +530,6 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
 namespace TclFormDialog {
 
 int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent) {
-    Q_UNUSED(parent);
-
     if (objc < 2) {
         Tcl_SetResult(interp,
                       const_cast<char*>("usage: dialog form ?-title <title>? ?-nonmodal <bool>? ?-objectid <id>? ?-applycmd <commandPrefix>? <defaultsDict> <formSpec>"),
@@ -683,7 +692,7 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
     }
 
     QObject::connect(buttons, &QDialogButtonBox::clicked, dialog,
-                     [interp, dialog, buttons, bindings, defaults, objectId, applyCommandObj](QAbstractButton* button) {
+                     [interp, parent, dialog, buttons, bindings, defaults, objectId, applyCommandObj](QAbstractButton* button) {
                          // Determine semantic action from the clicked button.
                          const QDialogButtonBox::ButtonRole role = buttons->buttonRole(button);
 
@@ -708,7 +717,28 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
 
                          // Dispatch optional Tcl callback with object id + dict payload.
                          QString commandError;
-                         if (!evaluateApplyCommand(interp, applyCommandObj, objectId, valuesObj, commandError)) {
+                         QString executedCommand;
+                         QString callbackResult;
+                         const bool callbackOk = evaluateApplyCommand(interp,
+                                                                     applyCommandObj,
+                                                                     objectId,
+                                                                     valuesObj,
+                                                                     commandError,
+                                                                     executedCommand,
+                                                                     callbackResult);
+                         if (TclConsoleWindow* console = qobject_cast<TclConsoleWindow*>(parent)) {
+                             if (!executedCommand.isEmpty()) {
+                                 console->appendTranscriptLine(QString("> %1").arg(executedCommand));
+                             }
+                             if (!callbackResult.isEmpty() && (!callbackOk || !executedCommand.isEmpty())) {
+                                 console->appendTranscriptLine(callbackResult);
+                             }
+                             if (!callbackOk) {
+                                 console->appendTranscriptLine(QString("ERROR (%1)").arg(TCL_ERROR));
+                             }
+                         }
+
+                         if (!callbackOk) {
                              QMessageBox::warning(dialog,
                                                   "Tickle command failed",
                                                   commandError.isEmpty() ? QStringLiteral("Failed to execute -applycmd") : commandError);
