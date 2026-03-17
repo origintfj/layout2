@@ -2,12 +2,12 @@
 
 #include <QString>
 
-class QWidget;
+class TclConsoleWindow;
 struct Tcl_Interp;
 struct Tcl_Obj;
 
 namespace TclFormDialog {
 
-int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent);
+int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], TclConsoleWindow* console);
 
 } // namespace TclFormDialog

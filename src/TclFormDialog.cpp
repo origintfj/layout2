@@ -464,7 +464,7 @@ Tcl_Obj* collectFormValues(Tcl_Interp* interp,
 }
 
 bool evaluateApplyCommand(Tcl_Interp* interp,
-                          QWidget* parent,
+                          TclConsoleWindow* console,
                           Tcl_Obj* applyCommandObj,
                           const QString& objectId,
                           Tcl_Obj* valuesObj,
@@ -511,7 +511,7 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
     const QString commandString = QString::fromUtf8(Tcl_GetString(commandObj));
 
     int evalStatus = TCL_OK;
-    if (TclConsoleWindow* console = qobject_cast<TclConsoleWindow*>(parent)) {
+    if (console) {
         evalStatus = console->evaluateConsoleCommand(commandString, true, true, true);
     } else {
         evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
@@ -534,7 +534,7 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
 
 namespace TclFormDialog {
 
-int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWidget* parent) {
+int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], TclConsoleWindow* console) {
     if (objc < 2) {
         Tcl_SetResult(interp,
                       const_cast<char*>("usage: dialog form ?-title <title>? ?-nonmodal <bool>? ?-objectid <id>? ?-applycmd <commandPrefix>? <defaultsDict> <formSpec>"),
@@ -697,7 +697,7 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
     }
 
     QObject::connect(buttons, &QDialogButtonBox::clicked, dialog,
-                     [interp, parent, dialog, buttons, bindings, defaults, objectId, applyCommandObj](QAbstractButton* button) {
+                     [interp, console, dialog, buttons, bindings, defaults, objectId, applyCommandObj](QAbstractButton* button) {
                          // Determine semantic action from the clicked button.
                          const QDialogButtonBox::ButtonRole role = buttons->buttonRole(button);
 
@@ -723,7 +723,7 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
                          // Dispatch optional Tcl callback with object id + dict payload.
                          QString commandError;
                          const bool callbackOk = evaluateApplyCommand(interp,
-                                                                     parent,
+                                                                     console,
                                                                      applyCommandObj,
                                                                      objectId,
                                                                      valuesObj,
