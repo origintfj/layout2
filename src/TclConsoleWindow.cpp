@@ -108,10 +108,6 @@ void TclConsoleWindow::appendTranscript(const QString& line) {
     m_output->appendPlainText(line);
 }
 
-void TclConsoleWindow::appendTranscriptLine(const QString& line) {
-    appendTranscript(line);
-}
-
 bool TclConsoleWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == m_input && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);

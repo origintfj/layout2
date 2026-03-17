@@ -512,10 +512,7 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
 
     int evalStatus = TCL_OK;
     if (TclConsoleWindow* console = qobject_cast<TclConsoleWindow*>(parent)) {
-        // Explicitly echo command text from dialog callbacks so users always see
-        // what Apply/OK executed.
-        console->appendTranscriptLine(QString("> %1").arg(commandString));
-        evalStatus = console->evaluateConsoleCommand(commandString, false, true, true);
+        evalStatus = console->evaluateConsoleCommand(commandString, true, true, true);
     } else {
         evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
     }

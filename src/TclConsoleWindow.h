@@ -36,7 +36,6 @@ public slots:
                                bool echoCommand = true,
                                bool echoResult = true,
                                bool echoErrorLine = true);
-    void appendTranscriptLine(const QString& line);
 
 private:
     void closeEvent(QCloseEvent* event) override;
