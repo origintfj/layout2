@@ -603,7 +603,9 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
     // Allocate on heap so the same dialog instance can live past command return
     // in non-modal mode.
     auto* dialog = new QDialog(nullptr, Qt::Window);
-    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    // Only non-modal dialogs should self-delete on close. Modal dialogs are
+    // deleted explicitly below after dialog->exec() returns.
+    dialog->setAttribute(Qt::WA_DeleteOnClose, nonModal);
     dialog->setWindowTitle(title);
     dialog->setWindowModality(nonModal ? Qt::NonModal : Qt::ApplicationModal);
     auto* rootLayout = new QVBoxLayout(dialog);
