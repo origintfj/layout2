@@ -464,12 +464,11 @@ Tcl_Obj* collectFormValues(Tcl_Interp* interp,
 }
 
 bool evaluateApplyCommand(Tcl_Interp* interp,
+                          QWidget* parent,
                           Tcl_Obj* applyCommandObj,
                           const QString& objectId,
                           Tcl_Obj* valuesObj,
-                          QString& errorMessage,
-                          QString& executedCommand,
-                          QString& callbackResult) {
+                          QString& errorMessage) {
     // -applycmd is optional in non-modal mode.
     if (!applyCommandObj) {
         return true;
@@ -503,15 +502,21 @@ bool evaluateApplyCommand(Tcl_Interp* interp,
     Tcl_IncrRefCount(payloadObj);
     evalObjv.push_back(payloadObj);
 
-    // Keep a readable command-string form so the console can echo callback execution.
+    // Serialize callback argv into one Tcl command string and run it through
+    // the same console evaluation pipeline used by normal user-entered commands.
     Tcl_Obj* commandObj = Tcl_NewListObj(0, nullptr);
     for (Tcl_Obj* argObj : evalObjv) {
         Tcl_ListObjAppendElement(interp, commandObj, argObj);
     }
-    executedCommand = QString::fromUtf8(Tcl_GetString(commandObj));
+    const QString commandString = QString::fromUtf8(Tcl_GetString(commandObj));
 
-    const int evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
-    callbackResult = QString::fromUtf8(Tcl_GetStringResult(interp));
+    int evalStatus = TCL_OK;
+    if (TclConsoleWindow* console = qobject_cast<TclConsoleWindow*>(parent)) {
+        evalStatus = console->evaluateConsoleCommand(commandString);
+    } else {
+        evalStatus = Tcl_EvalObjv(interp, evalObjv.size(), evalObjv.data(), TCL_EVAL_GLOBAL);
+    }
+
     Tcl_DecrRefCount(payloadObj);
     if (objectIdObj) {
         Tcl_DecrRefCount(objectIdObj);
@@ -717,26 +722,12 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
 
                          // Dispatch optional Tcl callback with object id + dict payload.
                          QString commandError;
-                         QString executedCommand;
-                         QString callbackResult;
                          const bool callbackOk = evaluateApplyCommand(interp,
+                                                                     parent,
                                                                      applyCommandObj,
                                                                      objectId,
                                                                      valuesObj,
-                                                                     commandError,
-                                                                     executedCommand,
-                                                                     callbackResult);
-                         if (TclConsoleWindow* console = qobject_cast<TclConsoleWindow*>(parent)) {
-                             if (!executedCommand.isEmpty()) {
-                                 console->appendTranscriptLine(QString("> %1").arg(executedCommand));
-                             }
-                             if (!callbackResult.isEmpty() && (!callbackOk || !executedCommand.isEmpty())) {
-                                 console->appendTranscriptLine(callbackResult);
-                             }
-                             if (!callbackOk) {
-                                 console->appendTranscriptLine(QString("ERROR (%1)").arg(TCL_ERROR));
-                             }
-                         }
+                                                                     commandError);
 
                          if (!callbackOk) {
                              QMessageBox::warning(dialog,

@@ -32,7 +32,7 @@ public slots:
     // Evaluates a Tcl command and appends result/error text to transcript.
     void executeCommand(const QString& command);
     void executeEditorCommand(int editorId, const QString& command, bool requestActivation);
-    void appendTranscriptLine(const QString& line);
+    int evaluateConsoleCommand(const QString& command);
 
 private:
     void closeEvent(QCloseEvent* event) override;
