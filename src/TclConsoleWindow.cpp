@@ -108,6 +108,10 @@ void TclConsoleWindow::appendTranscript(const QString& line) {
     m_output->appendPlainText(line);
 }
 
+void TclConsoleWindow::appendTranscriptLine(const QString& line) {
+    appendTranscript(line);
+}
+
 bool TclConsoleWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == m_input && event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
@@ -210,8 +214,11 @@ void TclConsoleWindow::executeCommand(const QString& command) {
     (void)evaluateConsoleCommand(command);
 }
 
-int TclConsoleWindow::evaluateConsoleCommand(const QString& command) {
-    return evaluateCommand(command, true, true, true, false);
+int TclConsoleWindow::evaluateConsoleCommand(const QString& command,
+                                          const bool echoCommand,
+                                          const bool echoResult,
+                                          const bool echoErrorLine) {
+    return evaluateCommand(command, echoCommand, echoResult, echoErrorLine, false);
 }
 
 void TclConsoleWindow::executeEditorCommand(const int editorId, const QString& command, const bool requestActivation) {
