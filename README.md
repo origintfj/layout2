@@ -110,11 +110,15 @@ transcript filter clear
 ### `dialog` command family
 
 ```tcl
-dialog form ?-title <title>? <defaultsDict> <formSpec>
+dialog form ?-title <title>? ?-command <commandPrefix> -objectid <objectId>? <defaultsDict> <formSpec>
 ```
 
-- Builds and displays a modal form dialog from Tcl and returns a dict on **OK**.
-- Dialog is created as a top-level movable window (not parent-embedded), while still application-modal.
+- By default, builds and displays a modal form dialog from Tcl and returns a dict on **OK**.
+- Dialog is created as a top-level movable window (not parent-embedded).
+- When `-command` and `-objectid` are both supplied, the dialog is **non-modal**, returns immediately with `dialog shown`, and keeps the Tcl console usable.
+- In non-modal mode, **Apply** evaluates `<commandPrefix> <objectId> <updatedDict>` and keeps the window open.
+- In non-modal mode, **OK** evaluates the same Tcl command and then closes the window.
+- In non-modal mode, **Cancel** closes the window without evaluating the callback command.
 - `defaultsDict` is the input Tcl dict of default values.
 - `formSpec` is a Tcl list of field dicts. Each field dict must include:
   - `type`: `entry`, `checkbox`, or `radio`
@@ -139,6 +143,20 @@ set formSpec [list \
     [dict create type radio key mode label "Mode" options {outline filled}]]
 
 set values [dialog form -title "Rectangle" $defaults $formSpec]
+```
+
+Non-modal example:
+
+```tcl
+set defaults [dict create width 10 height 20]
+set formSpec [list \
+    [dict create type entry key width label "Width" value_type int min 1] \
+    [dict create type entry key height label "Height" value_type int min 1]]
+
+dialog form -title "Edit Rectangle" \
+    -command {canvas object configure} \
+    -objectid 42 \
+    $defaults $formSpec
 ```
 
 ### `app` command family
