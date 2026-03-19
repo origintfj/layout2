@@ -86,6 +86,10 @@ TclConsoleWindow::~TclConsoleWindow() {
     }
 }
 
+int TclConsoleWindow::executeGeneratedConsoleCommand(const QString& command) {
+    return executeGeneratedCommand(command);
+}
+
 void TclConsoleWindow::closeEvent(QCloseEvent* event) {
     // Ensure auxiliary editor windows are explicitly torn down when the
     // interpreter window is closed.

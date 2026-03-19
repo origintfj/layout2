@@ -1,5 +1,7 @@
 #include "TclFormDialog.h"
 
+#include "TclConsoleWindow.h"
+
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QDialog>
@@ -496,12 +498,19 @@ bool validateAllBindings(QWidget* parent, const QVector<FieldBinding>& bindings)
     return true;
 }
 
-bool invokeNonModalDialogCommand(NonModalDialogCommandContext* context,
+bool invokeNonModalDialogCommand(QWidget* parent,
+                                 NonModalDialogCommandContext* context,
                                  const QHash<QString, QString>& defaults,
                                  const QVector<FieldBinding>& bindings,
                                  QString& errorMessage) {
     if (!context || !context->interp || !context->commandPrefixObj || !context->objectIdObj) {
         errorMessage = "dialog callback context is incomplete";
+        return false;
+    }
+
+    auto* consoleWindow = qobject_cast<TclConsoleWindow*>(parent);
+    if (!consoleWindow) {
+        errorMessage = "dialog callback requires a TclConsoleWindow parent";
         return false;
     }
 
@@ -513,7 +522,11 @@ bool invokeNonModalDialogCommand(NonModalDialogCommandContext* context,
     Tcl_ListObjAppendElement(context->interp, commandObj, Tcl_DuplicateObj(context->objectIdObj));
     Tcl_ListObjAppendElement(context->interp, commandObj, buildResultDict(context->interp, defaults, bindings));
 
-    const int rc = Tcl_EvalObjEx(context->interp, commandObj, TCL_EVAL_GLOBAL);
+    // Route the callback through the console's generated-command path so
+    // dialog-triggered Apply/OK behaves like other scripted commands:
+    // transcript filtering, result echoing, and error reporting stay consistent.
+    const QString command = QString::fromUtf8(Tcl_GetString(commandObj));
+    const int rc = consoleWindow->executeGeneratedConsoleCommand(command);
     if (rc != TCL_OK) {
         errorMessage = QString::fromUtf8(Tcl_GetStringResult(context->interp));
     }
@@ -670,23 +683,23 @@ int handleDialogCommand(Tcl_Interp* interp, int objc, Tcl_Obj* const objv[], QWi
 
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, dialog);
         rootLayout->addWidget(buttons);
-        QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog, [dialog, dialogState]() {
+        QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog, [dialog, dialogState, parent]() {
             if (!validateAllBindings(dialog, dialogState->bindings)) {
                 return;
             }
 
             QString errorMessage;
-            if (!invokeNonModalDialogCommand(&dialogState->callbackContext, dialogState->defaults, dialogState->bindings, errorMessage)) {
+            if (!invokeNonModalDialogCommand(parent, &dialogState->callbackContext, dialogState->defaults, dialogState->bindings, errorMessage)) {
                 QMessageBox::warning(dialog, "Dialog callback failed", errorMessage.isEmpty() ? "Tcl callback failed" : errorMessage);
             }
         });
-        QObject::connect(buttons->button(QDialogButtonBox::Ok), &QPushButton::clicked, dialog, [dialog, dialogState]() {
+        QObject::connect(buttons->button(QDialogButtonBox::Ok), &QPushButton::clicked, dialog, [dialog, dialogState, parent]() {
             if (!validateAllBindings(dialog, dialogState->bindings)) {
                 return;
             }
 
             QString errorMessage;
-            if (!invokeNonModalDialogCommand(&dialogState->callbackContext, dialogState->defaults, dialogState->bindings, errorMessage)) {
+            if (!invokeNonModalDialogCommand(parent, &dialogState->callbackContext, dialogState->defaults, dialogState->bindings, errorMessage)) {
                 QMessageBox::warning(dialog, "Dialog callback failed", errorMessage.isEmpty() ? "Tcl callback failed" : errorMessage);
                 return;
             }
