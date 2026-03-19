@@ -261,6 +261,8 @@ bool validateEntryBinding(const FieldBinding& binding, QString& errorMessage) {
         if (binding.hasMin && value < binding.minFloat) {
             errorMessage = QString("Field '%1' must be >= %2").arg(binding.key).arg(binding.minFloat);
             return false;
+        }
+
         if (binding.hasMax && value > binding.maxFloat) {
             errorMessage = QString("Field '%1' must be <= %2").arg(binding.key).arg(binding.maxFloat);
             return false;
