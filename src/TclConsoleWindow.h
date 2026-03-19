@@ -32,7 +32,7 @@ public:
     // commands with the same transcript filtering/echo behavior as the console.
     int executeGeneratedConsoleCommand(const QString& command);
 
-public slots:
+private slots:
     // Evaluates a Tcl command and appends result/error text to transcript.
     void executeEditorCommand(int editorId, const QString& command, bool requestActivation);
 

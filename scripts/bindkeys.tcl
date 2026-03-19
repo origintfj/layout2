@@ -15,3 +15,8 @@ bindkey set Esc {tool set select}
 bindkey set Shift+R {tool set rect}
 
 bindkey set Q {app properties}
+
+bindkey set Right {view pan -50   0}
+bindkey set Left  {view pan  50   0}
+bindkey set Up    {view pan   0 -50}
+bindkey set Down  {view pan   0  50}
