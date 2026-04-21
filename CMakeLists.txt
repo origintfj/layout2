@@ -11,7 +11,9 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Tcl C API is mandatory because command execution is core architecture.
-find_package(TCL REQUIRED)
+# Request only the Tcl component here: this project does not use Tk, and some
+# environments provide Tcl headers/libs without the Tk development package.
+find_package(TCL REQUIRED COMPONENTS Tcl)
 
 # Ubuntu commonly ships Qt5 by default; prefer Qt6 if present.
 find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
@@ -31,6 +33,16 @@ set(LAYOUT2_SOURCES
     src/LayerManager.h
     src/LayoutEditorWindow.cpp
     src/LayoutEditorWindow.h
+    src/LayoutCanvas.cpp
+    src/LayoutCanvas.h
+    src/RenderTypes.cpp
+    src/RenderTypes.h
+    src/PrimitiveRenderBackend.cpp
+    src/PrimitiveRenderBackend.h
+    src/RasterPrimitiveRenderBackend.cpp
+    src/RasterPrimitiveRenderBackend.h
+    src/OpenGLPrimitiveRenderBackend.cpp
+    src/OpenGLPrimitiveRenderBackend.h
     src/SelectionPropertiesDialog.cpp
     src/SelectionPropertiesDialog.h
     src/LayoutSceneModel.cpp
