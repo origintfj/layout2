@@ -11,7 +11,12 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Tcl C API is mandatory because command execution is core architecture.
-find_package(TCL REQUIRED)
+# Note: FindTCL treats `REQUIRED` as requiring both Tcl and Tk (TCLTK),
+# which fails on systems with Tcl runtime only. We only need Tcl.
+find_package(TCL)
+if (NOT TCL_FOUND)
+    message(FATAL_ERROR "Tcl library and headers are required to build layout2")
+endif()
 
 # Ubuntu commonly ships Qt5 by default; prefer Qt6 if present.
 find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
