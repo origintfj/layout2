@@ -65,6 +65,8 @@ LayoutCanvas::LayoutCanvas(QWidget* parent)
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 }
 
+LayoutCanvas::~LayoutCanvas() = default;
+
 void LayoutCanvas::setRootCell(const LayoutSceneNode* rootCell) {
     m_rootCell = rootCell;
     validateHover();
