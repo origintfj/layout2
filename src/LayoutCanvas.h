@@ -26,6 +26,7 @@ class LayoutCanvas : public QOpenGLWidget {
     Q_OBJECT
 public:
     explicit LayoutCanvas(QWidget* parent = nullptr);
+    ~LayoutCanvas() override;
 
     void setRootCell(const LayoutSceneNode* rootCell);
     void setEditPreview(bool enabled, const SceneRenderPrimitive& primitive);

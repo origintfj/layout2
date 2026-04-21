@@ -421,5 +421,3 @@ void LayoutEditorWindow::onCurrentRowChanged(const int currentRow, int) {
                               .arg(m_layers[currentRow].name, m_layers[currentRow].type),
                           true);
 }
-
-#include "LayoutEditorWindow.moc"
