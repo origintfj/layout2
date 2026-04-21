@@ -11,9 +11,17 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Tcl C API is mandatory because command execution is core architecture.
-# Request only the Tcl component here: this project does not use Tk, and some
-# environments provide Tcl headers/libs without the Tk development package.
-find_package(TCL REQUIRED COMPONENTS Tcl)
+# Avoid FindTCL here because some CMake versions treat missing Tk as fatal.
+find_path(TCL_INCLUDE_PATH
+    NAMES tcl.h
+    PATH_SUFFIXES tcl tcl8.6 tcl8.7 include/tcl include/tcl8.6 include/tcl8.7
+)
+find_library(TCL_LIBRARY
+    NAMES tcl tcl8.7 tcl8.6 tcl87 tcl86
+)
+if (NOT TCL_INCLUDE_PATH OR NOT TCL_LIBRARY)
+    message(FATAL_ERROR "Could not find Tcl development headers/library (tcl.h + libtcl).")
+endif()
 
 # Ubuntu commonly ships Qt5 by default; prefer Qt6 if present.
 find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
