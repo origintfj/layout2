@@ -11,9 +11,9 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Tcl C API is mandatory because command execution is core architecture.
-# Note: FindTCL treats `REQUIRED` as requiring both Tcl and Tk (TCLTK),
-# which fails on systems with Tcl runtime only. We only need Tcl.
-find_package(TCL)
+# Note: FindTCL reports optional Tk probes when Tk dev files are absent.
+# We do not use Tk, so keep lookup quiet and enforce Tcl explicitly.
+find_package(TCL QUIET)
 if (NOT TCL_FOUND)
     message(FATAL_ERROR "Tcl library and headers are required to build layout2")
 endif()

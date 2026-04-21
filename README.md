@@ -268,6 +268,10 @@ sudo apt install -y build-essential cmake tcl-dev qtbase5-dev
 # sudo apt install -y qt6-base-dev
 ```
 
+Notes:
+- `tk-dev` is **not** required by this project (only Tcl headers/libs are used).
+- If you see `Could NOT find TCLTK` / `Could NOT find TK` during configure on some CMake versions, those are informational probes from `FindTCL` and are safe to ignore as long as configure completes and `TCL` is found.
+
 ## Architecture / Microarchitecture
 
 This section describes the runtime architecture as it exists today, with emphasis on rendering, hit detection, scene modeling, and editor interaction boundaries.
