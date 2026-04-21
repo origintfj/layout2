@@ -11,7 +11,9 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Tcl C API is mandatory because command execution is core architecture.
-find_package(TCL REQUIRED)
+# Request only the Tcl component here: this project does not use Tk, and some
+# environments provide Tcl headers/libs without the Tk development package.
+find_package(TCL REQUIRED COMPONENTS Tcl)
 
 # Ubuntu commonly ships Qt5 by default; prefer Qt6 if present.
 find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
