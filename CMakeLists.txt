@@ -31,6 +31,16 @@ set(LAYOUT2_SOURCES
     src/LayerManager.h
     src/LayoutEditorWindow.cpp
     src/LayoutEditorWindow.h
+    src/LayoutCanvas.cpp
+    src/LayoutCanvas.h
+    src/RenderTypes.cpp
+    src/RenderTypes.h
+    src/PrimitiveRenderBackend.cpp
+    src/PrimitiveRenderBackend.h
+    src/RasterPrimitiveRenderBackend.cpp
+    src/RasterPrimitiveRenderBackend.h
+    src/OpenGLPrimitiveRenderBackend.cpp
+    src/OpenGLPrimitiveRenderBackend.h
     src/SelectionPropertiesDialog.cpp
     src/SelectionPropertiesDialog.h
     src/LayoutSceneModel.cpp
