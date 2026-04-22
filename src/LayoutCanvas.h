@@ -44,6 +44,9 @@ signals:
     void leftDragPreviewChanged(bool enabled, qint64 anchorX, qint64 anchorY, qint64 currentX, qint64 currentY);
 
 protected:
+    // Centralized event hook used to request redraws for expose/show/resize
+    // style lifecycle events so uncovered regions repaint promptly.
+    bool event(QEvent* event) override;
     void paintGL() override;
     void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;

@@ -67,6 +67,27 @@ LayoutCanvas::LayoutCanvas(QWidget* parent)
 
 LayoutCanvas::~LayoutCanvas() = default;
 
+bool LayoutCanvas::event(QEvent* event) {
+    // QOpenGLWidget + NoPartialUpdate can briefly show stale pixels when the
+    // widget becomes exposed again. Request a redraw on key lifecycle events
+    // so reveal/uncover paths do not wait for mouse movement to repaint.
+    switch (event->type()) {
+    case QEvent::Expose:
+    case QEvent::Show:
+    case QEvent::Resize:
+        // Queue a repaint (instead of forcing immediate repaint) to keep Qt's
+        // normal event coalescing and avoid recursive paint behavior.
+        if (isVisible()) {
+            update();
+        }
+        break;
+    default:
+        break;
+    }
+
+    return QOpenGLWidget::event(event);
+}
+
 void LayoutCanvas::setRootCell(const LayoutSceneNode* rootCell) {
     m_rootCell = rootCell;
     validateHover();
