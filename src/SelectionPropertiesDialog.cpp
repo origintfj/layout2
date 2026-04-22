@@ -362,16 +362,25 @@ QDialog* ensureDialogForParent(QWidget* parent) {
     dialog->resize(880, 540);
 
     if (parent) {
-        QObject::connect(parent, &QObject::destroyed, dialog, &QDialog::close);
+        QObject::connect(parent, &QObject::destroyed, dialog, [parent, dialog]() {
+            auto it = dialogStatesByParent().find(parent);
+            if (it != dialogStatesByParent().end()) {
+                it->onSelectionChanged = SelectionPropertiesDialog::DialogSelectionChangedCallback{};
+                it->onApplySelection = SelectionPropertiesDialog::DialogSelectionApplyCallback{};
+                it->selectedDialogObjectIds.clear();
+            }
+            dialog->close();
+        });
     }
 
-    QObject::connect(dialog, &QObject::destroyed, [parent]() {
+    QPointer<QWidget> parentGuard(parent);
+    QObject::connect(dialog, &QObject::destroyed, [parent, parentGuard]() {
         auto it = dialogStatesByParent().find(parent);
         if (it == dialogStatesByParent().end()) {
             return;
         }
 
-        if (it->onSelectionChanged) {
+        if (it->onSelectionChanged && !parentGuard.isNull()) {
             it->onSelectionChanged(QSet<quint64>{});
         }
 
