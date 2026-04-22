@@ -373,6 +373,9 @@ QDialog* ensureDialogForParent(QWidget* parent) {
         });
     }
 
+    // parentGuard is a weak QObject-tracking pointer. Qt automatically resets
+    // it to null when the parent widget is destroyed, so this lets us check
+    // whether callbacks can still safely target the parent-owned canvas state.
     QPointer<QWidget> parentGuard(parent);
     QObject::connect(dialog, &QObject::destroyed, [parent, parentGuard]() {
         auto it = dialogStatesByParent().find(parent);
@@ -380,6 +383,8 @@ QDialog* ensureDialogForParent(QWidget* parent) {
             return;
         }
 
+        // If the parent is already gone, skip onSelectionChanged({}) because
+        // that callback may capture the destroyed canvas ("this").
         if (it->onSelectionChanged && !parentGuard.isNull()) {
             it->onSelectionChanged(QSet<quint64>{});
         }
