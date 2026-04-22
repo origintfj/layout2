@@ -363,12 +363,17 @@ QDialog* ensureDialogForParent(QWidget* parent) {
 
     if (parent) {
         QObject::connect(parent, &QObject::destroyed, dialog, [parent, dialog]() {
+            // The dialog is keyed by its originating parent widget. If that
+            // parent is being destroyed, proactively clear the stored
+            // callbacks/state first so no later dialog-close/destroy signal can
+            // invoke callbacks that captured the now-dead canvas.
             auto it = dialogStatesByParent().find(parent);
             if (it != dialogStatesByParent().end()) {
                 it->onSelectionChanged = SelectionPropertiesDialog::DialogSelectionChangedCallback{};
                 it->onApplySelection = SelectionPropertiesDialog::DialogSelectionApplyCallback{};
                 it->selectedDialogObjectIds.clear();
             }
+            // Close the top-level properties dialog as part of parent teardown.
             dialog->close();
         });
     }
