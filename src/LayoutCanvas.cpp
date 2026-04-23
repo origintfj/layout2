@@ -310,6 +310,10 @@ void LayoutCanvas::wheelEvent(QWheelEvent* event) {
                               .arg(pos.x())
                               .arg(pos.y()),
                           false);
+    // Zoom is applied through the Tcl command path. Queue a repaint
+    // immediately as well so the canvas refresh is not dependent on a
+    // subsequent mouse-move event.
+    update();
     event->accept();
 }
 
