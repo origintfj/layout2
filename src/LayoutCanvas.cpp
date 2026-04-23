@@ -62,15 +62,18 @@ LayoutCanvas::LayoutCanvas(QWidget* parent)
       m_renderBackend(createPrimitiveRenderBackend(m_backendType)) {
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    // Preserve the widget's content between updates so temporary occlusion or
+    // wheel-zoom bursts do not reveal undefined/stale pixels while waiting for
+    // the next paint pass.
+    setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 }
 
 LayoutCanvas::~LayoutCanvas() = default;
 
 bool LayoutCanvas::event(QEvent* event) {
-    // QOpenGLWidget + NoPartialUpdate can briefly show stale pixels when the
-    // widget becomes exposed again. Request a redraw on key lifecycle events
-    // so reveal/uncover paths do not wait for mouse movement to repaint.
+    // Request redraws on lifecycle visibility/geometry events so reveal and
+    // resize paths reliably schedule a fresh paint without waiting for pointer
+    // movement.
     switch (event->type()) {
     case QEvent::Expose:
     case QEvent::Show:
