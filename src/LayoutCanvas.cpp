@@ -62,7 +62,10 @@ LayoutCanvas::LayoutCanvas(QWidget* parent)
       m_renderBackend(createPrimitiveRenderBackend(m_backendType)) {
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
-    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    // Preserve the widget's content between updates so temporary occlusion or
+    // wheel-zoom bursts do not reveal undefined/stale pixels while waiting for
+    // the next paint pass.
+    setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 }
 
 LayoutCanvas::~LayoutCanvas() = default;
@@ -123,6 +126,14 @@ void LayoutCanvas::paintGL() {
     if (m_backendType == RenderTypes::BackendType::OpenGL) {
         if (QOpenGLContext* ctx = context()) {
             if (QOpenGLFunctions* gl = ctx->functions()) {
+                // Some Qt/platform update paths leave scissor enabled to the
+                // damage region. Disable it and reset viewport so clear/draw
+                // always cover the full canvas and do not leave stale pixels.
+                gl->glDisable(GL_SCISSOR_TEST);
+                const qreal dpr = devicePixelRatioF();
+                gl->glViewport(0, 0,
+                               static_cast<GLint>(std::lround(width() * dpr)),
+                               static_cast<GLint>(std::lround(height() * dpr)));
                 gl->glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
                 gl->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             }
@@ -289,6 +300,10 @@ void LayoutCanvas::wheelEvent(QWheelEvent* event) {
                               .arg(pos.x())
                               .arg(pos.y()),
                           false);
+    // Zoom is applied through the Tcl command path. Queue a repaint
+    // immediately as well so the canvas refresh is not dependent on a
+    // subsequent mouse-move event.
+    update();
     event->accept();
 }
 

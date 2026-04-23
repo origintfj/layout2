@@ -53,6 +53,9 @@ void OpenGLPrimitiveRenderBackend::drawPrimitives(QPainter& painter,
     m_program.enableAttributeArray(1);
 
     QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
+    // Qt may enable scissor for partial update regions; disable it so backend
+    // draws are not clipped to stale damage rectangles.
+    gl->glDisable(GL_SCISSOR_TEST);
     gl->glDisable(GL_DEPTH_TEST);
     gl->glEnable(GL_BLEND);
     gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
