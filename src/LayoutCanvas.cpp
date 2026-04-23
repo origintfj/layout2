@@ -66,6 +66,12 @@ LayoutCanvas::LayoutCanvas(QWidget* parent)
     // wheel-zoom bursts do not reveal undefined/stale pixels while waiting for
     // the next paint pass.
     setUpdateBehavior(QOpenGLWidget::PartialUpdate);
+
+    // Keep the pulse timer inactive by default; it is only armed for short
+    // repaint bursts after expose/zoom/pan style interactions.
+    m_repaintPulseTimer.setInterval(16);
+    m_repaintPulseTimer.setSingleShot(false);
+    connect(&m_repaintPulseTimer, &QTimer::timeout, this, &LayoutCanvas::onRepaintPulse);
 }
 
 LayoutCanvas::~LayoutCanvas() = default;
@@ -82,6 +88,9 @@ bool LayoutCanvas::event(QEvent* event) {
         // normal event coalescing and avoid recursive paint behavior.
         if (isVisible()) {
             update();
+            // Request a few follow-up frames in case the platform compositor
+            // reveals damage after the first scheduled repaint.
+            scheduleRepaintBurst();
         }
         break;
     default:
@@ -317,7 +326,33 @@ void LayoutCanvas::wheelEvent(QWheelEvent* event) {
     // immediately as well so the canvas refresh is not dependent on a
     // subsequent mouse-move event.
     update();
+    // Wheel interactions can generate compositor artifacts that outlive a
+    // single frame, so queue a small follow-up burst.
+    scheduleRepaintBurst();
     event->accept();
+}
+
+void LayoutCanvas::scheduleRepaintBurst(const int frameCount) {
+    if (frameCount <= 0) {
+        return;
+    }
+
+    // Extend (never shrink) an in-flight burst so overlapping interactions
+    // still get enough follow-up paint opportunities.
+    m_repaintBurstFramesRemaining = std::max(m_repaintBurstFramesRemaining, frameCount);
+    if (!m_repaintPulseTimer.isActive()) {
+        m_repaintPulseTimer.start();
+    }
+}
+
+void LayoutCanvas::onRepaintPulse() {
+    if (m_repaintBurstFramesRemaining <= 0 || !isVisible()) {
+        m_repaintPulseTimer.stop();
+        return;
+    }
+
+    update();
+    --m_repaintBurstFramesRemaining;
 }
 
 QPointF LayoutCanvas::worldToScreen(const qint64 x, const qint64 y) const {

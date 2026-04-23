@@ -8,6 +8,7 @@
 #include <QOpenGLWidget>
 #include <QPointF>
 #include <QSet>
+#include <QTimer>
 #include <QVector>
 #include <memory>
 
@@ -89,6 +90,10 @@ private:
     void validateSelection();
     void validateHover();
     void drawGrid(QPainter& painter);
+    // Queue a short repaint burst to recover promptly from compositor/expose
+    // scenarios where a single update request can be delayed/dropped.
+    void scheduleRepaintBurst(int frameCount = 3);
+    void onRepaintPulse();
 
     const LayoutSceneNode* m_rootCell{nullptr};
     QVector<LayerDefinition> m_layers;
@@ -121,4 +126,7 @@ private:
     double m_panX{0.0};
     double m_panY{0.0};
     double m_gridSize{40.0};
+    // Low-frequency pulse used only for short post-interaction repaint bursts.
+    QTimer m_repaintPulseTimer;
+    int m_repaintBurstFramesRemaining{0};
 };
